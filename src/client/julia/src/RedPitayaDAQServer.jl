@@ -12,6 +12,17 @@ import Base: reset, iterate, length
 
 export RedPitaya, receive, query, start, stop, disconnect, getLog
 
+mutable struct ScpiCommand
+  cmd::String
+  wp::Union{UInt64, Nothing}
+  duration::Union{UInt64, Nothing}
+end
+
+mutable struct ScpiHistory
+  history::Vector{ScpiCommand}
+  histStart::UInt64
+end
+
 mutable struct RedPitaya
   host::String
   delim::String
@@ -23,6 +34,39 @@ mutable struct RedPitaya
   isConnected::Bool
   isMaster::Bool
   destroyed::Bool
+  scpiHistory::Union{ScpiHistory, Nothing}
+end
+
+clearHistory(rp::RedPitaya) = rp.scpiHistory === nothing || empty!(rp.scpiHistory)
+addCommand(rp::RedPitaya, cmd::ScpiCommand) = rp.scpiHistory === nothing ||  push!(rp, cmd)
+function enableHistory(rp::RedPitaya) 
+  counter = commandCounter(rp)
+  rp.scpiHistory = ScpiHistory(Vector{ScpiCommand}(), counter)
+end
+disableHistory(rp::RedPitaya) = rp.scpiHistory = nothing
+
+function updateHistory(rp::RedPitaya)
+  (counter, hist) = readHistory(rp)
+  for i = counter-7:counter
+    # If command exists and is in history
+    if i > 0 && length(rp.scpiHistory.history) >= i - histStart 
+      cmd = rp.scpiHistory.history[i - histStart]
+      cmd.wp = hist[1, i % 8]
+      cmd.duration = hist[2, i % 8]
+    end
+  end
+end
+
+function readHistory(rp::RedPitaya)
+  send(rp, "RP:STATus:HISTory")
+  counter = read!(rp.dataSocket, Array{UInt64}(undef, 1))
+  temp = Array{UInt64}(undef, 2 * 8)
+  hist = reshape(temp, 2, 8)
+  return (counter[1], hist)
+end
+
+function commandCounter(rp::RedPitaya)
+  return query(rp, "RP:STATus:HISTory:COUNTer?", UInt64)
 end
 
 # Iterable Interface
@@ -36,6 +80,9 @@ Send a command to the RedPitaya
 function send(rp::RedPitaya,cmd::String)
   @debug "send command: " cmd
   write(rp.socket,cmd*rp.delim)
+  if rp.scpiHistory !== nothing
+    addCommand(rp, cmd)
+  end
 end
 
 """
@@ -111,7 +158,7 @@ end
 
 function RedPitaya(host, port=5025, isMaster=true)
 
-  rp = RedPitaya(host,"\n", TCPSocket(), TCPSocket(), 1, 1, 1, false, isMaster, false)
+  rp = RedPitaya(host,"\n", TCPSocket(), TCPSocket(), 1, 1, 1, false, isMaster, false, nothing)
 
   connect(rp)
 
