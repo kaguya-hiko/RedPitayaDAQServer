@@ -54,6 +54,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.55;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -100,6 +101,7 @@ aside.rack {
 .prm .num .u { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); min-width: 38px; white-space: nowrap; }
 .prm input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
 .prm select { width: 100%; }
+.hint { margin: -2px 0 0; font-size: 0.74rem; line-height: 1.5; color: var(--muted); }
 details.adv summary { cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); }
 details.adv[open] summary { margin-bottom: 10px; }
 details.adv .inner { display: grid; gap: 10px; }
@@ -261,6 +263,7 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
           <li>ASE は指定した波長範囲を等間隔のチャネルに分け、前方・後方それぞれに自然放出項 <code>2hνΔν·Γσₑ N₂</code> を入れています。</li>
           <li>信号とコア励起のオーバーラップ Γ は基本モードのガウス近似（Marcuse の式）から、クラッド励起は面積比 (a<sub>core</sub>/a<sub>clad</sub>)² から求めています。マルチモードコアでも基本モードとして扱います。</li>
           <li>断面積は代表的な Yb ドープ・アルミノシリケートファイバーの文献値に合わせたガウス関数の和です（976 nm で約 2.5×10⁻²⁴ m²、1030 nm 放出で約 0.7×10⁻²⁴ m²）。実際のファイバーとは数十 % 程度ずれることがあります。</li>
+          <li>ドープ量はスペックシートの小信号吸収 (dB/m) で指定できます。クラッド吸収は α = 4.34·(a<sub>core</sub>/a<sub>clad</sub>)²·σₐ(λ)·N、コア吸収は α = 4.34·Γ(λ)·σₐ(λ)·N として Yb 濃度 N に換算します。976 nm の吸収ピークは鋭いため、基準波長はスペックシートと同じものを選んでください。</li>
           <li>熱負荷は平均蛍光波長 1005 nm を基準にした量子欠損と背景損失から見積もっています。</li>
           <li>考慮していないもの: 非線形効果（SRS・SBS・SPM）、フォトダークニング、温度依存性、パルス動作、端面反射による寄生発振。</li>
         </ul>
@@ -276,8 +279,8 @@ const H = 6.62607015e-34, C0 = 2.99792458e8;
 
 /* Approximate Yb:aluminosilicate cross-sections, sums of Gaussians.
    lambda in nm, result in m^2. Values tuned to typical published spectra:
-   sa(915)~0.75e-24, sa=se(976)~2.6e-24, se(1030)~0.7e-24, se(1064)~0.27e-24 */
-const ABS_TERMS = [[975.5, 2.45, 3.4], [912, 0.62, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]];
+   sa(915)~0.8e-24, sa=se(976)~2.6e-24, se(1030)~0.7e-24, se(1064)~0.27e-24 */
+const ABS_TERMS = [[975.5, 2.45, 3.4], [912, 0.70, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]];
 const EMI_TERMS = [[975.5, 2.45, 3.4], [997, 0.22, 14], [1028, 0.60, 18], [1065, 0.25, 40], [955, 0.07, 18]];
 function gsum(terms, l) {
   let s = 0;
@@ -488,7 +491,11 @@ const DEF = [
     { id: 'coreD', label: 'コア径', unit: 'µm', min: 2, max: 50, step: 0.5 },
     { id: 'NA', label: 'コア NA', unit: '', min: 0.03, max: 0.25, step: 0.001 },
     { id: 'cladD', label: '内クラッド径', unit: 'µm', min: 60, max: 600, step: 1 },
-    { id: 'N', label: 'Yb 濃度', unit: '10²⁵/m³', min: 0.5, max: 30, step: 0.1 },
+    { id: 'absMode', label: 'ドープ量の指定', type: 'select', options: [['clad', 'クラッド吸収'], ['core', 'コア吸収'], ['conc', 'Yb 濃度']] },
+    { id: 'absDB', label: 'クラッド吸収', unit: 'dB/m', min: 0.05, max: 3000, step: 0.01, scale: 'log', show: () => P.absMode !== 'conc' },
+    { id: 'absL', label: '吸収の基準波長', type: 'select', options: [['915', '915 nm'], ['920', '920 nm'], ['940', '940 nm'], ['976', '976 nm']], show: () => P.absMode !== 'conc' },
+    { id: 'N', label: 'Yb 濃度', unit: '10²⁵/m³', min: 0.5, max: 30, step: 0.1, show: () => P.absMode === 'conc' },
+    { id: 'absHint', type: 'hint' },
     { id: 'tau', label: '上準位寿命', unit: 'ms', min: 0.5, max: 1.5, step: 0.01 },
     { id: 'lossDBkm', label: '背景損失', unit: 'dB/km', min: 0, max: 200, step: 1 },
   ]},
@@ -509,20 +516,31 @@ const ADV = [
   { id: 'aseMin', label: 'ASE 下限', unit: 'nm', min: 950, max: 1050, step: 1 },
   { id: 'aseMax', label: 'ASE 上限', unit: 'nm', min: 1060, max: 1200, step: 1 },
 ];
-const ALL = DEF.flatMap(g => g.items).concat(ADV);
+const ALL = DEF.flatMap(g => g.items).concat(ADV).filter(d => d.type !== 'hint');
+
+/* doping: spec-sheet small-signal absorption <-> Yb ion density */
+const DB_PER_NEPER = 10 / Math.LN10;
+const absGamma = (mode, lam) => mode === 'core' ? modeInfo(P.coreD, P.NA, lam).gamma : Math.min(1, Math.pow(P.coreD / P.cladD, 2));
+const absFromN = (mode, lam, N) => DB_PER_NEPER * absGamma(mode, lam) * sigA(lam) * N * 1e25;
+const effN = () => P.absMode === 'conc' ? P.N : P.absDB / absFromN(P.absMode, +P.absL, 1);
+const ABS_HINT = {
+  clad: 'スペックシートの「クラッド吸収」をそのまま入れてください。面積比 (コア径/クラッド径)² で Yb 濃度に換算します。',
+  core: 'スペックシートの「コア吸収」をそのまま入れてください。基本モードとドープ領域の重なり Γ を考慮して Yb 濃度に換算します。',
+  conc: 'コア内の Yb イオン数密度を直接指定します。',
+};
 const FIXED = { maxIter: 400, tol: 1e-6, lf: 1005 };
 const NUMERICS = { nz: 200, aseRes: 2, aseMin: 970, aseMax: 1150 };
 
 const PRESETS = [
-  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, N: 6.6, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
-  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, N: 12, tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
-  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, N: 8, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
-  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, N: 6.6, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
+  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
+  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
+  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
+  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
 ];
 const PUMP_MAX = { clad: 500, core: 20 };
 
-let P = Object.assign({}, PRESETS[0].p, NUMERICS);
-const STORE_KEY = 'ybamp-params-v1';
+let P = Object.assign({ N: 6.6 }, PRESETS[0].p, NUMERICS);
+const STORE_KEY = 'ybamp-params-v2';
 try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (s && typeof s === 'object') for (const k of Object.keys(P)) if (k in s) P[k] = s[k]; } catch (e) {}
 
 const decimals = (step) => { const s = String(step); return s.includes('.') ? s.split('.')[1].length : 0; };
@@ -543,10 +561,11 @@ const fromT = (d, t) => {
 const fmtIn = (d, v) => d.scale === 'log' ? String(+v.toPrecision(4)) : (+v).toFixed(decimals(d.step));
 
 function rowHTML(d) {
+  if (d.type === 'hint') return `<p class="hint" id="${d.id}"></p>`;
   if (d.type === 'select') {
-    return `<div class="prm"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+    return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
   }
-  return `<div class="prm"><label for="p-${d.id}">${d.label}</label><div class="num"><input id="p-${d.id}" type="number" step="any" min="${d.min}" max="${d.max}" inputmode="decimal"><span class="u">${d.unit}</span></div><input id="r-${d.id}" type="range" min="0" max="1000" step="1" aria-label="${d.label}"></div>`;
+  return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}" id="lb-${d.id}">${d.label}</label><div class="num"><input id="p-${d.id}" type="number" step="any" min="${d.min}" max="${d.max}" inputmode="decimal"><span class="u">${d.unit}</span></div><input id="r-${d.id}" type="range" min="0" max="1000" step="1" aria-label="${d.label}"></div>`;
 }
 const rack = $('#rack');
 rack.innerHTML = DEF.map(g => `<div class="grp"><h2><span class="sw" style="background:var(${g.sw})"></span>${g.g}</h2>${g.items.map(rowHTML).join('')}</div>`).join('') +
@@ -560,6 +579,9 @@ function syncInputs() {
     el.value = fmtIn(d, P[d.id]);
     $('#r-' + d.id).value = Math.round(toT(d, P[d.id]) * 1000);
   }
+  for (const d of ALL) if (d.show) $('#row-' + d.id).hidden = !d.show();
+  $('#lb-absDB').textContent = P.absMode === 'core' ? 'コア吸収' : 'クラッド吸収';
+  $('#absHint').textContent = ABS_HINT[P.absMode] || '';
 }
 function applyPumpRange() {
   const mx = PUMP_MAX[P.pumpMode] || 500;
@@ -571,7 +593,14 @@ function onParam(id, v, src) {
     if (!isFinite(v)) return;
     v = clamp(v, d.min, d.max);
   }
-  P[id] = v;
+  if (id === 'absMode' || id === 'absL') {
+    // keep the same doping when only the way of specifying it changes
+    const n0 = effN();
+    P[id] = v;
+    if (P.absMode === 'conc') P.N = +clamp(n0, 0.5, 30).toFixed(1);
+    else P.absDB = +absFromN(P.absMode, +P.absL, n0).toPrecision(3);
+  } else P[id] = v;
+  if (P.absMode !== 'conc') P.N = effN();
   if (id === 'pumpMode') { applyPumpRange(); }
   if (id === 'aseMin' || id === 'aseMax') { if (P.aseMax - P.aseMin < 10) P.aseMax = P.aseMin + 10; }
   if (src !== 'num' || d.type === 'select') syncInputs();
@@ -601,6 +630,7 @@ function matchPreset() {
 function loadPreset(id) {
   const pr = PRESETS.find(p => p.id === id); if (!pr) return;
   Object.assign(P, pr.p);
+  if (P.absMode !== 'conc') P.N = effN();
   applyPumpRange(); syncInputs(); presetSel.value = id; persist(); updateDerived(); drawXS(); schedule(); resetSweepRange();
 }
 presetSel.addEventListener('change', () => { if (presetSel.value !== 'custom') loadPreset(presetSel.value); });
@@ -623,9 +653,14 @@ function updateDerived() {
   const ms = modeInfo(P.coreD, P.NA, P.ls);
   const mp = modeInfo(P.coreD, P.NA, P.lp);
   const gp = P.pumpMode === 'core' ? mp.gamma : Math.min(1, Math.pow(P.coreD / P.cladD, 2));
-  const absP = 4.343 * gp * sigA(P.lp) * P.N * 1e25;
-  const absS = 4.343 * ms.gamma * sigA(P.ls) * P.N * 1e25;
+  const N = effN();
+  const absP = DB_PER_NEPER * gp * sigA(P.lp) * N * 1e25;
+  const absS = DB_PER_NEPER * ms.gamma * sigA(P.ls) * N * 1e25;
   const rows = [
+    ['Yb 濃度', N.toFixed(2) + ' ×10²⁵ m⁻³'],
+    ['クラッド吸収 915 nm', absFromN('clad', 915, N).toFixed(2) + ' dB/m'],
+    ['クラッド吸収 976 nm', absFromN('clad', 976, N).toFixed(2) + ' dB/m'],
+    ['コア吸収 976 nm', absFromN('core', 976, N).toFixed(0) + ' dB/m'],
     ['V 値 (信号)', ms.V.toFixed(2) + (ms.V > 2.405 ? ' MM' : ' SM')],
     ['MFD (信号)', (ms.mfd * 1e6).toFixed(1) + ' µm'],
     ['Γ 信号', ms.gamma.toFixed(3)],
@@ -896,7 +931,7 @@ function makeWorker() {
 }
 worker = makeWorker();
 let busy = false, pending = false, runId = 0;
-function params() { return Object.assign({}, P, FIXED); }
+function params() { return Object.assign({}, P, FIXED, { N: effN() }); }
 function schedule() {
   if (!worker) { setTimeout(() => { last = simulate(params()); render(); }, 0); return; }
   if (busy) { pending = true; return; }
@@ -1121,6 +1156,7 @@ $('#sw-copy').addEventListener('click', () => {
 });
 
 /* ---------- boot ---------- */
+if (P.absMode !== 'conc') P.N = effN();
 applyPumpRange();
 syncInputs();
 presetSel.value = matchPreset();
