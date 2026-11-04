@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Ybファイバーアンプ シミュレータ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: instrument console. Controls in a fixed left rack, results on a bench to the right:
+   amplifier schematic (fiber colored by inversion) -> readouts -> profiles -> sweep. */
+:root {
+  --bg: #EEF1F4;
+  --panel: #FFFFFF;
+  --ink: #15202C;
+  --muted: #5B6A7A;
+  --line: #D6DDE5;
+  --grid: #E6EBF0;
+  --accent: #2A55C8;
+  --accent-ink: #FFFFFF;
+  --sig: #C42F3B;
+  --pump: #0A857F;
+  --asef: #B27A08;
+  --aseb: #7244C0;
+  --heat: #B3531A;
+  --inv: #2A55C8;
+  --ok: #1D7F47;
+  --warn: #A86A0B;
+  --bad: #BD3326;
+  --inv-lo: #DCE3EB;
+  --inv-hi: #C42F3B;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+    --accent: #7FA0FF; --accent-ink: #0D1116;
+    --sig: #FF6C74; --pump: #3CCAC0; --asef: #EDB441; --aseb: #AA8CFF; --heat: #F08B4C; --inv: #7FA0FF;
+    --ok: #4CC883; --warn: #E8AE4A; --bad: #FF7A6B; --inv-lo: #222C37; --inv-hi: #FF6C74;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+  --accent: #7FA0FF; --accent-ink: #0D1116;
+  --sig: #FF6C74; --pump: #3CCAC0; --asef: #EDB441; --aseb: #AA8CFF; --heat: #F08B4C; --inv: #7FA0FF;
+  --ok: #4CC883; --warn: #E8AE4A; --bad: #FF7A6B; --inv-lo: #222C37; --inv-hi: #FF6C74;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1440px; margin: 0 auto; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+header.top h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: 0.01em; text-wrap: balance; }
+header.top h1 small { font-family: var(--font-mono); font-weight: 500; font-size: 0.8rem; color: var(--muted); margin-left: 8px; letter-spacing: 0.04em; }
+header.top p { margin: 2px 0 0; color: var(--muted); max-width: 62ch; }
+.hdr-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.hdr-ctl label { font-size: 0.78rem; color: var(--muted); letter-spacing: 0.04em; }
+
+select, input[type="number"] {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 5px 8px; min-width: 0;
+}
+input[type="number"] { font-family: var(--font-mono); font-size: 0.86rem; text-align: right; width: 100%; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; border-radius: 4px; padding: 6px 12px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+}
+button.ghost { background: transparent; color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.app { display: grid; grid-template-columns: minmax(270px, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 920px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+/* control rack */
+aside.rack {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow: auto;
+}
+@media (max-width: 920px) { aside.rack { position: static; max-height: none; } }
+.grp { padding: 12px 14px 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.grp:first-child { border-top: 0; }
+.grp h2 { margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.grp h2 .sw { width: 10px; height: 3px; border-radius: 2px; }
+.prm { display: grid; grid-template-columns: minmax(0, 1fr) 128px; align-items: center; gap: 2px 10px; }
+.prm > label { font-size: 0.86rem; }
+.prm .num { display: flex; align-items: center; gap: 6px; }
+.prm .num .u { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); min-width: 38px; white-space: nowrap; }
+.prm input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.prm select { width: 100%; }
+details.adv summary { cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); }
+details.adv[open] summary { margin-bottom: 10px; }
+details.adv .inner { display: grid; gap: 10px; }
+.derived { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 0.8rem; }
+.derived dt { color: var(--muted); }
+.derived dd { margin: 0; font-family: var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* bench */
+main.bench { display: grid; gap: 18px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+.card-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
+.card-h h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+.card-h .sub { font-size: 0.76rem; color: var(--muted); }
+
+.schem { position: relative; }
+.schem canvas { width: 100%; height: 170px; display: block; }
+.status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 0.75rem; font-weight: 500; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; display: inline-flex; align-items: center; gap: 6px; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); } .chip.info { color: var(--muted); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.kpi { background: var(--panel); padding: 11px 14px 12px; display: grid; gap: 2px; align-content: start; }
+.kpi .k { font-size: 0.74rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.kpi .k i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.kpi .v { font-family: var(--font-mono); font-size: 1.45rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.kpi .v span { font-size: 0.8rem; color: var(--muted); margin-left: 3px; }
+.kpi .s { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.charts .wide { grid-column: 1 / -1; }
+@media (max-width: 1100px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { position: relative; }
+.chart canvas { width: 100%; height: 240px; display: block; touch-action: pan-y; }
+.chart.tall canvas { height: 280px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.76rem; color: var(--muted); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.legend i.dash { border-top-style: dashed; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 8px; font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.45; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.12); z-index: 2; font-variant-numeric: tabular-nums;
+}
+.tip b { font-weight: 500; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 3px 10px; font-size: 0.75rem; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.sweep-ctl { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-bottom: 10px; }
+.sweep-ctl .f { display: grid; gap: 3px; font-size: 0.74rem; color: var(--muted); }
+.sweep-ctl .f input { width: 110px; }
+.prog { height: 3px; background: var(--grid); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.prog div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 500; font-family: var(--font-body); }
+.empty { color: var(--muted); font-size: 0.85rem; padding: 18px 4px; }
+
+.notes { font-size: 0.84rem; color: var(--muted); }
+.notes h3 { color: var(--ink); }
+.notes ul { margin: 6px 0 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 95ch; }
+.notes code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 4px; font-size: 0.82rem; z-index: 20; }
+@media (prefers-reduced-motion: reduce) { .prog div { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Ybファイバーアンプ シミュレータ<small>Yb³⁺ · 2準位レート方程式 + ASE</small></h1>
+      <p>ファイバー・励起・信号の条件を変えると、信号/励起/ASEの伝搬、反転分布、熱負荷、出力スペクトルを定常状態で計算し直します。</p>
+    </div>
+    <div class="hdr-ctl">
+      <label for="preset">プリセット</label>
+      <select id="preset"></select>
+      <button class="ghost" id="reset" type="button">初期値に戻す</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="rack" id="rack" aria-label="パラメータ"></aside>
+
+    <main class="bench">
+      <section class="card schem">
+        <div class="card-h">
+          <h3>増幅器の構成と反転分布</h3>
+          <span class="sub" id="schem-sub"></span>
+        </div>
+        <canvas id="schem" aria-label="増幅器の模式図。ファイバーは反転分布の大きさで色分け"></canvas>
+        <div class="status" id="status"></div>
+      </section>
+
+      <section class="kpis" id="kpis" aria-label="主要な出力値"></section>
+
+      <section class="charts">
+        <div class="card chart tall wide" id="c-power">
+          <div class="card-h">
+            <h3>ファイバー内のパワー分布</h3>
+            <div class="tools">
+              <div class="seg" role="group" aria-label="縦軸の単位">
+                <button type="button" id="u-w" aria-pressed="true">W</button>
+                <button type="button" id="u-dbm" aria-pressed="false">dBm</button>
+              </div>
+              <button class="ghost" type="button" id="copy-z">分布をCSVでコピー</button>
+            </div>
+          </div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-inv">
+          <div class="card-h"><h3>反転分布 N₂/N</h3><span class="sub">破線は信号波長の透明点</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-heat">
+          <div class="card-h"><h3>熱負荷</h3><span class="sub">量子欠損 + 背景損失</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-spec">
+          <div class="card-h"><h3>出力スペクトル</h3><span class="sub" id="spec-sub">ASE は dBm/nm、信号は全パワー</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-xs">
+          <div class="card-h"><h3>Yb 吸収・誘導放出断面積</h3><span class="sub">アルミノシリケートの代表値</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-h">
+          <h3>パラメータ掃引</h3>
+          <span class="sub" id="sw-sub">1つの条件を動かして出力の変化を調べます</span>
+        </div>
+        <div class="sweep-ctl">
+          <div class="f"><label for="sw-var">掃引する量</label>
+            <select id="sw-var">
+              <option value="pump">励起パワー (合計)</option>
+              <option value="L">ファイバー長</option>
+              <option value="seed">信号入力パワー</option>
+              <option value="ls">信号波長</option>
+              <option value="lp">励起波長</option>
+            </select></div>
+          <div class="f"><label for="sw-from">開始 <span id="sw-u1"></span></label><input id="sw-from" type="number" step="any"></div>
+          <div class="f"><label for="sw-to">終了 <span id="sw-u2"></span></label><input id="sw-to" type="number" step="any"></div>
+          <div class="f"><label for="sw-n">点数</label><input id="sw-n" type="number" min="3" max="80" step="1" value="21"></div>
+          <button type="button" id="sw-run">掃引を実行</button>
+          <button type="button" class="ghost" id="sw-copy" disabled>表をCSVでコピー</button>
+        </div>
+        <div class="prog"><div id="sw-prog"></div></div>
+        <div class="chart" id="c-sweep"><canvas></canvas><div class="legend"></div></div>
+        <div class="tbl-wrap" id="sw-tbl"><div class="empty">「掃引を実行」を押すと、ここに各点の結果が並びます。</div></div>
+      </section>
+
+      <section class="card notes">
+        <h3>計算モデル</h3>
+        <ul>
+          <li>Yb³⁺ を2準位系として扱い、定常レート方程式と伝搬方程式を z 方向に解きます。前方・後方の伝搬を交互に積分し、端面出力の相対変化が 10⁻⁶ 未満になるまで繰り返します（Heun 法・指数積分）。</li>
+          <li>ASE は指定した波長範囲を等間隔のチャネルに分け、前方・後方それぞれに自然放出項 <code>2hνΔν·Γσₑ N₂</code> を入れています。</li>
+          <li>信号とコア励起のオーバーラップ Γ は基本モードのガウス近似（Marcuse の式）から、クラッド励起は面積比 (a<sub>core</sub>/a<sub>clad</sub>)² から求めています。マルチモードコアでも基本モードとして扱います。</li>
+          <li>断面積は代表的な Yb ドープ・アルミノシリケートファイバーの文献値に合わせたガウス関数の和です（976 nm で約 2.5×10⁻²⁴ m²、1030 nm 放出で約 0.7×10⁻²⁴ m²）。実際のファイバーとは数十 % 程度ずれることがあります。</li>
+          <li>熱負荷は平均蛍光波長 1005 nm を基準にした量子欠損と背景損失から見積もっています。</li>
+          <li>考慮していないもの: 非線形効果（SRS・SBS・SPM）、フォトダークニング、温度依存性、パルス動作、端面反射による寄生発振。</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script id="solver">
+/* ===== Yb fiber amplifier model (steady-state, two-level, ASE) ===== */
+const H = 6.62607015e-34, C0 = 2.99792458e8;
+
+/* Approximate Yb:aluminosilicate cross-sections, sums of Gaussians.
+   lambda in nm, result in m^2. Values tuned to typical published spectra:
+   sa(915)~0.75e-24, sa=se(976)~2.6e-24, se(1030)~0.7e-24, se(1064)~0.27e-24 */
+const ABS_TERMS = [[975.5, 2.45, 3.4], [912, 0.62, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]];
+const EMI_TERMS = [[975.5, 2.45, 3.4], [997, 0.22, 14], [1028, 0.60, 18], [1065, 0.25, 40], [955, 0.07, 18]];
+function gsum(terms, l) {
+  let s = 0;
+  for (const [c, a, w] of terms) { const u = (l - c) / w; s += a * Math.exp(-u * u); }
+  return s * 1e-24;
+}
+const sigA = l => gsum(ABS_TERMS, l);
+const sigE = l => gsum(EMI_TERMS, l);
+
+/* Fundamental-mode overlap with a uniformly doped core (Marcuse Gaussian approximation) */
+function modeInfo(coreDiam_um, NA, lambda_nm) {
+  const a = coreDiam_um * 1e-6 / 2, lam = lambda_nm * 1e-9;
+  const V = 2 * Math.PI * a * NA / lam;
+  const wa = 0.65 + 1.619 / Math.pow(V, 1.5) + 2.879 / Math.pow(V, 6);
+  const w = wa * a;
+  return { V, w, mfd: 2 * w, gamma: 1 - Math.exp(-2 * a * a / (w * w)) };
+}
+
+function simulate(p) {
+  const L = p.L, M = p.nz;
+  const dz = L / M;
+  const a = p.coreD * 1e-6 / 2;
+  const Acore = Math.PI * a * a;
+  const Aclad = Math.PI * Math.pow(p.cladD * 1e-6 / 2, 2);
+  const N = p.N * 1e25;
+  const tau = p.tau * 1e-3;
+  const alphaBg = p.lossDBkm / 1000 / 4.343; // 1/m
+
+  const gs = modeInfo(p.coreD, p.NA, p.ls).gamma;
+  const gp = p.pumpMode === 'core' ? modeInfo(p.coreD, p.NA, p.lp).gamma : Math.min(1, Acore / Aclad);
+
+  // channel list
+  const ch = [];
+  const add = (o) => {
+    const nu = C0 / (o.lam * 1e-9);
+    o.nu = nu;
+    o.sa = sigA(o.lam); o.se = sigE(o.lam);
+    o.hnuA = H * nu * Acore;
+    ch.push(o);
+  };
+  add({ kind: 'sig', dir: 1, lam: p.ls, G: gs, Pin: p.PsIn_mW * 1e-3, spont: 0 });
+  add({ kind: 'pf', dir: 1, lam: p.lp, G: gp, Pin: p.Ppf, spont: 0 });
+  add({ kind: 'pb', dir: -1, lam: p.lp, G: gp, Pin: p.Ppb, spont: 0 });
+  const aseL = [];
+  for (let l = p.aseMin; l <= p.aseMax + 1e-9; l += p.aseRes) aseL.push(+l.toFixed(4));
+  for (const l of aseL) {
+    const g = modeInfo(p.coreD, p.NA, l).gamma;
+    const dnu = C0 * (p.aseRes * 1e-9) / Math.pow(l * 1e-9, 2);
+    for (const d of [1, -1]) add({ kind: d > 0 ? 'af' : 'ab', dir: d, lam: l, G: g, Pin: 0, spont: 2 * H * (C0 / (l * 1e-9)) * dnu });
+  }
+  const K = ch.length;
+  for (const c of ch) {
+    c.P = new Float64Array(M + 1);
+    c.wa = c.G * c.sa / c.hnuA; // absorption rate per W
+    c.we = c.G * c.se / c.hnuA;
+    c.ga = c.G * c.sa * N;      // 1/m at full ground state
+    c.gt = c.G * (c.sa + c.se) * N;
+    if (c.dir > 0) c.P[0] = c.Pin; else c.P[M] = c.Pin;
+  }
+  const fwd = ch.filter(c => c.dir > 0), bwd = ch.filter(c => c.dir < 0);
+  const n2 = new Float64Array(M + 1);
+  const tmp = new Float64Array(K);
+  const g0 = new Float64Array(K), s0 = new Float64Array(K);
+
+  // inversion at node i, with powers from arrays except overrides in 'over' (for a direction set)
+  const inv = (i, set, vals) => {
+    let up = 0, tot = 0;
+    for (let k = 0; k < K; k++) {
+      const c = ch[k];
+      const P = c.P[i];
+      up += c.wa * P; tot += (c.wa + c.we) * P;
+    }
+    if (set) {
+      for (let j = 0; j < set.length; j++) {
+        const c = set[j], d = vals[j] - c.P[i];
+        up += c.wa * d; tot += (c.wa + c.we) * d;
+      }
+    }
+    return up / (tot + 1 / tau);
+  };
+  const step = (P, g, s, h) => {
+    const x = g * h;
+    const e = Math.exp(x);
+    const f = Math.abs(x) < 1e-8 ? h : Math.expm1(x) / g;
+    return P * e + s * f;
+  };
+
+  const pass = (set, dir) => {
+    const n = set.length;
+    const start = dir > 0 ? 0 : M, end = dir > 0 ? M : 0;
+    const pred = new Float64Array(n);
+    for (let i = start; i !== end; i += dir) {
+      const j = i + dir;
+      const x0 = inv(i, null, null);
+      n2[i] = x0;
+      for (let k = 0; k < n; k++) {
+        const c = set[k];
+        g0[k] = c.gt * x0 - c.ga - alphaBg;
+        s0[k] = c.spont * c.G * c.se * N * x0;
+        pred[k] = step(c.P[i], g0[k], s0[k], dz);
+      }
+      // corrector: inversion at next node with predicted values
+      const x1 = inv(j, set, pred);
+      for (let k = 0; k < n; k++) {
+        const c = set[k];
+        const g1 = c.gt * x1 - c.ga - alphaBg;
+        const s1 = c.spont * c.G * c.se * N * x1;
+        c.P[j] = step(c.P[i], 0.5 * (g0[k] + g1), 0.5 * (s0[k] + s1), dz);
+      }
+      n2[j] = x1;
+    }
+  };
+
+  const outs = () => ch.map(c => c.dir > 0 ? c.P[M] : c.P[0]);
+  let prev = outs(), it = 0, err = 1, converged = false;
+  const tolScale = 1e-9 + p.Ppf + p.Ppb + p.PsIn_mW * 1e-3;
+  for (it = 1; it <= p.maxIter; it++) {
+    pass(fwd, 1);
+    pass(bwd, -1);
+    const cur = outs();
+    err = 0;
+    for (let k = 0; k < K; k++) {
+      const d = Math.abs(cur[k] - prev[k]) / (Math.abs(cur[k]) + 1e-6 * tolScale);
+      if (d > err) err = d;
+    }
+    prev = cur;
+    if (err < p.tol) { converged = true; break; }
+  }
+  // final inversion consistent with all arrays
+  for (let i = 0; i <= M; i++) n2[i] = inv(i, null, null);
+
+  // heat load (W/m): quantum defect relative to mean fluorescence + background loss
+  const nuF = C0 / (p.lf * 1e-9);
+  const heat = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) {
+    let q = 0;
+    for (const c of ch) {
+      const P = c.P[i];
+      const net = (c.ga - c.gt * n2[i]) * P; // net absorbed power per length (W/m)
+      q += net * (1 - nuF / c.nu) + alphaBg * P;
+    }
+    heat[i] = q;
+  }
+
+  const z = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) z[i] = i * dz;
+  const sumDir = (kind, idx) => ch.filter(c => c.kind === kind).reduce((s, c) => s + c.P[idx], 0);
+  const aseF = new Float64Array(M + 1), aseB = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) { aseF[i] = sumDir('af', i); aseB[i] = sumDir('ab', i); }
+  return {
+    z, n2, heat, aseF, aseB, aseL, converged, iters: Math.min(it, p.maxIter), err,
+    sig: ch[0].P, pf: ch[1].P, pb: ch[2].P,
+    specF: ch.filter(c => c.kind === 'af').map(c => c.P[M]),
+    specB: ch.filter(c => c.kind === 'ab').map(c => c.P[0]),
+    gs, gp, Acore, Aclad, N,
+    out: {
+      sig: ch[0].P[M], sigIn: ch[0].Pin,
+      pumpRes: ch[1].P[M] + ch[2].P[0],
+      aseF: aseF[M], aseB: aseB[0],
+    }
+  };
+}
+
+
+/* worker entry: the same source runs on the page (for cross-sections) and inside a blob Worker */
+function sweepParams(base, v, x) {
+  const p = Object.assign({}, base);
+  if (v === 'pump') {
+    const tot = base.Ppf + base.Ppb;
+    const ff = tot > 0 ? base.Ppf / tot : 1;
+    p.Ppf = x * ff; p.Ppb = x * (1 - ff);
+  } else if (v === 'L') p.L = x;
+  else if (v === 'seed') p.PsIn_mW = x;
+  else if (v === 'ls') p.ls = x;
+  else if (v === 'lp') p.lp = x;
+  return p;
+}
+if (typeof window === 'undefined' && typeof self !== 'undefined' && typeof importScripts === 'function') {
+  self.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'run') {
+      const r = simulate(m.params);
+      self.postMessage({ type: 'result', id: m.id, r });
+    } else if (m.type === 'sweep') {
+      const pts = [];
+      m.xs.forEach((x, i) => {
+        const p = sweepParams(m.params, m.v, x);
+        const r = simulate(p);
+        const pt = { x, sig: r.out.sig, sigIn: r.out.sigIn, pump: p.Ppf + p.Ppb, pumpRes: r.out.pumpRes, aseF: r.out.aseF, aseB: r.out.aseB, conv: r.converged };
+        pts.push(pt);
+        self.postMessage({ type: 'sweep-progress', id: m.id, i, n: m.xs.length, pt });
+      });
+      self.postMessage({ type: 'sweep-done', id: m.id, pts });
+    }
+  };
+}
+</script>
+<script>
+(() => {
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- parameters ---------- */
+const DEF = [
+  { g: 'ファイバー', sw: '--inv', items: [
+    { id: 'L', label: 'ファイバー長', unit: 'm', min: 0.1, max: 30, step: 0.05 },
+    { id: 'coreD', label: 'コア径', unit: 'µm', min: 2, max: 50, step: 0.5 },
+    { id: 'NA', label: 'コア NA', unit: '', min: 0.03, max: 0.25, step: 0.001 },
+    { id: 'cladD', label: '内クラッド径', unit: 'µm', min: 60, max: 600, step: 1 },
+    { id: 'N', label: 'Yb 濃度', unit: '10²⁵/m³', min: 0.5, max: 30, step: 0.1 },
+    { id: 'tau', label: '上準位寿命', unit: 'ms', min: 0.5, max: 1.5, step: 0.01 },
+    { id: 'lossDBkm', label: '背景損失', unit: 'dB/km', min: 0, max: 200, step: 1 },
+  ]},
+  { g: '励起', sw: '--pump', items: [
+    { id: 'pumpMode', label: '励起方式', type: 'select', options: [['clad', 'クラッド励起'], ['core', 'コア励起']] },
+    { id: 'lp', label: '励起波長', unit: 'nm', min: 900, max: 990, step: 0.5 },
+    { id: 'Ppf', label: '前方励起', unit: 'W', min: 0, max: 500, step: 0.01, scale: 'sq' },
+    { id: 'Ppb', label: '後方励起', unit: 'W', min: 0, max: 500, step: 0.01, scale: 'sq' },
+  ]},
+  { g: '信号', sw: '--sig', items: [
+    { id: 'ls', label: '信号波長', unit: 'nm', min: 1000, max: 1120, step: 0.5 },
+    { id: 'PsIn_mW', label: '入力パワー', unit: 'mW', min: 0.001, max: 20000, step: 0.001, scale: 'log' },
+  ]},
+];
+const ADV = [
+  { id: 'nz', label: 'z 分割数', unit: '', min: 50, max: 2000, step: 10 },
+  { id: 'aseRes', label: 'ASE 分解能', unit: 'nm', min: 0.5, max: 10, step: 0.5 },
+  { id: 'aseMin', label: 'ASE 下限', unit: 'nm', min: 950, max: 1050, step: 1 },
+  { id: 'aseMax', label: 'ASE 上限', unit: 'nm', min: 1060, max: 1200, step: 1 },
+];
+const ALL = DEF.flatMap(g => g.items).concat(ADV);
+const FIXED = { maxIter: 400, tol: 1e-6, lf: 1005 };
+const NUMERICS = { nz: 200, aseRes: 2, aseMin: 970, aseMax: 1150 };
+
+const PRESETS = [
+  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, N: 6.6, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
+  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, N: 12, tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
+  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, N: 8, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
+  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, N: 6.6, tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
+];
+const PUMP_MAX = { clad: 500, core: 20 };
+
+let P = Object.assign({}, PRESETS[0].p, NUMERICS);
+const STORE_KEY = 'ybamp-params-v1';
+try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (s && typeof s === 'object') for (const k of Object.keys(P)) if (k in s) P[k] = s[k]; } catch (e) {}
+
+const decimals = (step) => { const s = String(step); return s.includes('.') ? s.split('.')[1].length : 0; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const toT = (d, v) => {
+  if (d.scale === 'sq') return Math.sqrt(clamp(v, 0, d.max) / d.max);
+  if (d.scale === 'log') return Math.log(clamp(v, d.min, d.max) / d.min) / Math.log(d.max / d.min);
+  return (clamp(v, d.min, d.max) - d.min) / (d.max - d.min);
+};
+const fromT = (d, t) => {
+  let v;
+  if (d.scale === 'sq') v = d.max * t * t;
+  else if (d.scale === 'log') v = d.min * Math.pow(d.max / d.min, t);
+  else v = d.min + t * (d.max - d.min);
+  if (d.scale === 'log') { const m = Math.pow(10, Math.floor(Math.log10(v)) - 2); return Math.round(v / m) * m; }
+  return +(Math.round(v / d.step) * d.step).toFixed(decimals(d.step));
+};
+const fmtIn = (d, v) => d.scale === 'log' ? String(+v.toPrecision(4)) : (+v).toFixed(decimals(d.step));
+
+function rowHTML(d) {
+  if (d.type === 'select') {
+    return `<div class="prm"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+  }
+  return `<div class="prm"><label for="p-${d.id}">${d.label}</label><div class="num"><input id="p-${d.id}" type="number" step="any" min="${d.min}" max="${d.max}" inputmode="decimal"><span class="u">${d.unit}</span></div><input id="r-${d.id}" type="range" min="0" max="1000" step="1" aria-label="${d.label}"></div>`;
+}
+const rack = $('#rack');
+rack.innerHTML = DEF.map(g => `<div class="grp"><h2><span class="sw" style="background:var(${g.sw})"></span>${g.g}</h2>${g.items.map(rowHTML).join('')}</div>`).join('') +
+  `<div class="grp"><details class="adv"><summary>計算設定</summary><div class="inner">${ADV.map(rowHTML).join('')}</div></details></div>` +
+  `<div class="grp"><h2>ファイバーの諸元 (計算値)</h2><dl class="derived" id="derived"></dl></div>`;
+
+function syncInputs() {
+  for (const d of ALL) {
+    const el = $('#p-' + d.id);
+    if (d.type === 'select') { el.value = P[d.id]; continue; }
+    el.value = fmtIn(d, P[d.id]);
+    $('#r-' + d.id).value = Math.round(toT(d, P[d.id]) * 1000);
+  }
+}
+function applyPumpRange() {
+  const mx = PUMP_MAX[P.pumpMode] || 500;
+  for (const id of ['Ppf', 'Ppb']) { const d = ALL.find(x => x.id === id); d.max = mx; $('#p-' + id).max = mx; }
+}
+function onParam(id, v, src) {
+  const d = ALL.find(x => x.id === id);
+  if (d.type !== 'select') {
+    if (!isFinite(v)) return;
+    v = clamp(v, d.min, d.max);
+  }
+  P[id] = v;
+  if (id === 'pumpMode') { applyPumpRange(); }
+  if (id === 'aseMin' || id === 'aseMax') { if (P.aseMax - P.aseMin < 10) P.aseMax = P.aseMin + 10; }
+  if (src !== 'num' || d.type === 'select') syncInputs();
+  else $('#r-' + id).value = Math.round(toT(d, v) * 1000);
+  $('#preset').value = matchPreset();
+  persist();
+  updateDerived();
+  schedule();
+  if (id === 'pumpMode' || id === 'lp' || id === 'ls') drawXS();
+}
+for (const d of ALL) {
+  const el = $('#p-' + d.id);
+  if (d.type === 'select') { el.addEventListener('change', () => onParam(d.id, el.value, 'sel')); continue; }
+  el.addEventListener('change', () => onParam(d.id, parseFloat(el.value), 'num'));
+  el.addEventListener('input', () => { const v = parseFloat(el.value); if (isFinite(v) && v >= d.min && v <= d.max) onParam(d.id, v, 'num'); });
+  const r = $('#r-' + d.id);
+  r.addEventListener('input', () => onParam(d.id, fromT(d, r.value / 1000), 'range'));
+}
+const persist = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(P)); } catch (e) {} };
+
+const presetSel = $('#preset');
+presetSel.innerHTML = PRESETS.map(p => `<option value="${p.id}">${p.name}</option>`).join('') + '<option value="custom">カスタム</option>';
+function matchPreset() {
+  for (const pr of PRESETS) if (Object.keys(pr.p).every(k => pr.p[k] === P[k])) return pr.id;
+  return 'custom';
+}
+function loadPreset(id) {
+  const pr = PRESETS.find(p => p.id === id); if (!pr) return;
+  Object.assign(P, pr.p);
+  applyPumpRange(); syncInputs(); presetSel.value = id; persist(); updateDerived(); drawXS(); schedule(); resetSweepRange();
+}
+presetSel.addEventListener('change', () => { if (presetSel.value !== 'custom') loadPreset(presetSel.value); });
+$('#reset').addEventListener('click', () => { Object.assign(P, NUMERICS); loadPreset(PRESETS[0].id); });
+
+/* ---------- formatting ---------- */
+function fmtW(w) {
+  const a = Math.abs(w);
+  if (a === 0) return ['0', 'W'];
+  if (a >= 1) return [a >= 100 ? w.toFixed(1) : a >= 10 ? w.toFixed(2) : w.toFixed(3), 'W'];
+  if (a >= 1e-3) { const m = w * 1e3; return [Math.abs(m) >= 100 ? m.toFixed(1) : Math.abs(m) >= 10 ? m.toFixed(2) : m.toFixed(3), 'mW']; }
+  const u = w * 1e6; return [Math.abs(u) >= 100 ? u.toFixed(1) : Math.abs(u) >= 10 ? u.toFixed(2) : u.toFixed(3), 'µW'];
+}
+const fmtWs = (w) => fmtW(w).join(' ');
+const dB = (x) => 10 * Math.log10(x);
+const dBm = (w) => 10 * Math.log10(Math.max(w, 1e-15) / 1e-3);
+
+/* ---------- derived fiber parameters ---------- */
+function updateDerived() {
+  const ms = modeInfo(P.coreD, P.NA, P.ls);
+  const mp = modeInfo(P.coreD, P.NA, P.lp);
+  const gp = P.pumpMode === 'core' ? mp.gamma : Math.min(1, Math.pow(P.coreD / P.cladD, 2));
+  const absP = 4.343 * gp * sigA(P.lp) * P.N * 1e25;
+  const absS = 4.343 * ms.gamma * sigA(P.ls) * P.N * 1e25;
+  const rows = [
+    ['V 値 (信号)', ms.V.toFixed(2) + (ms.V > 2.405 ? ' MM' : ' SM')],
+    ['MFD (信号)', (ms.mfd * 1e6).toFixed(1) + ' µm'],
+    ['Γ 信号', ms.gamma.toFixed(3)],
+    ['Γ 励起', gp < 0.01 ? gp.toFixed(4) : gp.toFixed(3)],
+    ['励起の小信号吸収', absP.toFixed(2) + ' dB/m'],
+    ['同 全長', (absP * P.L).toFixed(1) + ' dB'],
+    ['信号の基底吸収', (absS * P.L).toFixed(2) + ' dB'],
+    ['量子欠損', ((1 - P.lp / P.ls) * 100).toFixed(1) + ' %'],
+  ];
+  $('#derived').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+/* ---------- chart ---------- */
+function niceStep(span, n) {
+  const raw = span / Math.max(1, n);
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+function ticks(min, max, n) {
+  const st = niceStep(max - min, n);
+  const out = [];
+  for (let v = Math.ceil(min / st - 1e-9) * st; v <= max + st * 1e-9; v += st) out.push(+v.toPrecision(12));
+  return { out, st };
+}
+const tickFmt = (v, st) => { const d = Math.max(0, -Math.floor(Math.log10(st) + 1e-9)); return v.toFixed(Math.min(d, 6)); };
+
+class Chart {
+  constructor(el) {
+    this.el = el; this.cv = el.querySelector('canvas'); this.lg = el.querySelector('.legend');
+    this.tip = document.createElement('div'); this.tip.className = 'tip'; this.tip.hidden = true; el.appendChild(this.tip);
+    this.hx = null; this.cfg = null;
+    const mv = (e) => { const r = this.cv.getBoundingClientRect(); this.hx = e.clientX - r.left; this.hy = e.clientY - r.top; this.draw(); };
+    this.cv.addEventListener('pointermove', mv);
+    this.cv.addEventListener('pointerdown', mv);
+    this.cv.addEventListener('pointerleave', () => { this.hx = null; this.tip.hidden = true; this.draw(); });
+    CHARTS.push(this);
+  }
+  set(cfg) {
+    this.cfg = cfg;
+    if (this.lg) {
+      const items = cfg.series.filter(s => s.label).map(s => `<span><i class="${s.dash ? 'dash' : ''}" style="border-color:var(${s.color})"></i>${s.label}</span>`);
+      (cfg.stems || []).forEach(s => items.push(`<span><i style="border-color:var(${s.color});width:3px;height:10px;border-top:0;border-left:2px solid var(${s.color})"></i>${s.legend || s.label}</span>`));
+      this.lg.innerHTML = items.join('');
+    }
+    this.draw();
+  }
+  draw() {
+    const cfg = this.cfg; if (!cfg) return;
+    const cv = this.cv, dpr = window.devicePixelRatio || 1;
+    const W = cv.clientWidth, Hh = cv.clientHeight;
+    if (!W || !Hh) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(Hh * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, Hh);
+    const C = { ink: cssVar('--ink'), muted: cssVar('--muted'), grid: cssVar('--grid'), line: cssVar('--line'), panel: cssVar('--panel') };
+    const mono = cssVar('--font-mono');
+    // ranges
+    let xmin = cfg.x.min, xmax = cfg.x.max, ymin = cfg.y.min, ymax = cfg.y.max;
+    if (xmin == null || xmax == null) {
+      let a = Infinity, b = -Infinity;
+      for (const s of cfg.series) for (const v of s.x) { if (v < a) a = v; if (v > b) b = v; }
+      if (xmin == null) xmin = a; if (xmax == null) xmax = b;
+    }
+    if (ymin == null || ymax == null) {
+      let a = Infinity, b = -Infinity;
+      for (const s of cfg.series) for (const v of s.y) if (isFinite(v)) { if (v < a) a = v; if (v > b) b = v; }
+      for (const s of (cfg.stems || [])) if (isFinite(s.y)) { a = Math.min(a, s.y); b = Math.max(b, s.y); }
+      for (const h of (cfg.hlines || [])) { a = Math.min(a, h.y); b = Math.max(b, h.y); }
+      if (!isFinite(a)) { a = 0; b = 1; }
+      if (a === b) { b = a + 1; }
+      const pad = (b - a) * 0.06;
+      if (ymin == null) ymin = cfg.y.zero && a >= 0 ? 0 : a - pad;
+      if (ymax == null) ymax = b + pad;
+    }
+    if (cfg.y.floor != null) ymin = Math.max(ymin, cfg.y.floor);
+    if (xmax === xmin) xmax = xmin + 1;
+    ctx.font = `11px ${mono}`;
+    const yt = ticks(ymin, ymax, Math.max(3, Math.round(Hh / 48)));
+    const ylw = Math.max(...yt.out.map(v => ctx.measureText(tickFmt(v, yt.st)).width));
+    const L = Math.max(40, ylw + 26), R = 12, T = 10, B = 36;
+    const pw = W - L - R, ph = Hh - T - B;
+    const X = (v) => L + (v - xmin) / (xmax - xmin) * pw;
+    const Y = (v) => T + (1 - (v - ymin) / (ymax - ymin)) * ph;
+    // grid
+    ctx.lineWidth = 1; ctx.strokeStyle = C.grid; ctx.fillStyle = C.muted; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    for (const v of yt.out) { const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(tickFmt(v, yt.st), L - 6, y); }
+    const xt = ticks(xmin, xmax, Math.max(3, Math.round(pw / 80)));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (const v of xt.out) { const x = Math.round(X(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); const tx = tickFmt(v, xt.st), tw = ctx.measureText(tx).width; ctx.fillText(tx, clamp(x, tw / 2 + 2, W - tw / 2 - 2), T + ph + 5); }
+    ctx.strokeStyle = C.line; ctx.strokeRect(L + 0.5, T + 0.5, pw, ph);
+    // axis labels
+    ctx.font = `11px ${cssVar('--font-body')}`; ctx.fillStyle = C.muted;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(cfg.x.label, L + pw / 2, Hh - 2);
+    ctx.save(); ctx.translate(11, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(cfg.y.label, 0, 0); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+    // ref lines
+    for (const h of (cfg.hlines || [])) {
+      ctx.strokeStyle = cssVar(h.color); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(L, Y(h.y)); ctx.lineTo(L + pw, Y(h.y)); ctx.stroke(); ctx.setLineDash([]);
+      if (h.label) { ctx.fillStyle = cssVar(h.color); ctx.font = `11px ${cssVar('--font-body')}`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(h.label, L + pw - 4, Y(h.y) - 3); }
+    }
+    for (const vl of (cfg.vlines || [])) {
+      if (vl.x < xmin || vl.x > xmax) continue;
+      ctx.strokeStyle = cssVar(vl.color); ctx.setLineDash([3, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X(vl.x), T); ctx.lineTo(X(vl.x), T + ph); ctx.stroke(); ctx.setLineDash([]);
+      if (vl.label) { ctx.fillStyle = cssVar(vl.color); ctx.font = `11px ${mono}`; ctx.textBaseline = 'top'; const right = X(vl.x) > L + pw - 70; ctx.textAlign = right ? 'right' : 'left'; ctx.fillText(vl.label, X(vl.x) + (right ? -4 : 4), T + 4); }
+    }
+    // series
+    for (const s of cfg.series) {
+      ctx.strokeStyle = cssVar(s.color); ctx.lineWidth = s.w || 1.8; ctx.setLineDash(s.dash ? [6, 4] : []); ctx.lineJoin = 'round';
+      if (s.fill) {
+        ctx.beginPath(); let started = false;
+        for (let i = 0; i < s.x.length; i++) { const y = s.y[i]; if (!isFinite(y)) continue; const px = X(s.x[i]), py = Y(Math.max(y, ymin)); if (!started) { ctx.moveTo(px, Y(ymin)); ctx.lineTo(px, py); started = true; } else ctx.lineTo(px, py); }
+        if (started) { ctx.lineTo(X(s.x[s.x.length - 1]), Y(ymin)); ctx.closePath(); ctx.globalAlpha = 0.12; ctx.fillStyle = cssVar(s.color); ctx.fill(); ctx.globalAlpha = 1; }
+      }
+      ctx.beginPath(); let pen = false;
+      for (let i = 0; i < s.x.length; i++) {
+        const y = s.y[i];
+        if (!isFinite(y)) { pen = false; continue; }
+        const px = X(s.x[i]), py = Y(Math.max(y, ymin - (ymax - ymin)));
+        if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      if (s.dots) { ctx.fillStyle = cssVar(s.color); for (let i = 0; i < s.x.length; i++) if (isFinite(s.y[i])) { ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), 2.4, 0, 7); ctx.fill(); } }
+    }
+    for (const st of (cfg.stems || [])) {
+      if (!isFinite(st.y)) continue;
+      const c = cssVar(st.color), px = X(st.x), py = Y(st.y);
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, T + ph); ctx.lineTo(px, py); ctx.stroke();
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(px, py, 3.5, 0, 7); ctx.fill();
+      if (st.label) { ctx.font = `11px ${mono}`; ctx.textBaseline = 'middle'; const right = px > L + pw - 110; ctx.textAlign = right ? 'right' : 'left'; ctx.fillText(st.label, px + (right ? -8 : 8), Math.max(T + 8, py)); }
+    }
+    for (const mk of (cfg.marks || [])) {
+      const c = cssVar(mk.color); ctx.strokeStyle = c; ctx.fillStyle = cssVar('--panel'); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(mk.x), Y(mk.y), 4.5, 0, 7); ctx.fill(); ctx.stroke();
+      if (mk.label) { ctx.fillStyle = c; ctx.font = `11px ${mono}`; ctx.textAlign = X(mk.x) > L + pw / 2 ? 'right' : 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(mk.label, X(mk.x) + (ctx.textAlign === 'right' ? -8 : 8), Y(mk.y) - 6); }
+    }
+    ctx.restore();
+    // hover
+    if (this.hx != null && this.hx >= L && this.hx <= L + pw && cfg.series.length) {
+      const xv = xmin + (this.hx - L) / pw * (xmax - xmin);
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(Math.round(this.hx) + 0.5, T); ctx.lineTo(Math.round(this.hx) + 0.5, T + ph); ctx.stroke(); ctx.setLineDash([]);
+      const lines = [`<b>${cfg.x.fmt ? cfg.x.fmt(xv) : xv.toFixed(2)}</b> ${cfg.x.unit || ''}`];
+      for (const s of cfg.series) {
+        if (!s.label || s.noTip) continue;
+        const i = nearest(s.x, xv); if (i < 0) continue;
+        const yv = s.tipY ? s.tipY[i] : s.y[i];
+        ctx.fillStyle = cssVar(s.color); ctx.beginPath(); ctx.arc(X(s.x[i]), Y(clamp(s.y[i], ymin, ymax)), 3, 0, 7); ctx.fill();
+        lines.push(`<span style="color:var(${s.color})">●</span> ${s.label}: <b>${(cfg.y.fmt || ((v) => v.toPrecision(3)))(yv)}</b>`);
+      }
+      this.tip.innerHTML = lines.join('<br>');
+      this.tip.hidden = false;
+      const tw = this.tip.offsetWidth, cvr = this.cv.offsetLeft, cvt = this.cv.offsetTop;
+      let left = cvr + this.hx + 12; if (left + tw > cvr + W) left = cvr + this.hx - tw - 12;
+      this.tip.style.left = Math.max(cvr, left) + 'px';
+      this.tip.style.top = (cvt + T + 4) + 'px';
+    }
+  }
+}
+function nearest(xs, v) {
+  const n = xs.length; if (!n) return -1;
+  let lo = 0, hi = n - 1;
+  const asc = xs[n - 1] >= xs[0];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if ((xs[m] < v) === asc) lo = m; else hi = m; }
+  return Math.abs(xs[lo] - v) <= Math.abs(xs[hi] - v) ? lo : hi;
+}
+const CHARTS = [];
+const chPower = new Chart($('#c-power')), chInv = new Chart($('#c-inv')), chHeat = new Chart($('#c-heat')),
+  chSpec = new Chart($('#c-spec')), chXS = new Chart($('#c-xs')), chSweep = new Chart($('#c-sweep'));
+const redrawAll = () => { CHARTS.forEach(c => c.draw()); drawSchem(); };
+if ('ResizeObserver' in window) new ResizeObserver(() => redrawAll()).observe(document.body); else window.addEventListener('resize', redrawAll);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', redrawAll);
+new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- cross sections chart ---------- */
+function drawXS() {
+  const xs = [], a = [], e = [];
+  for (let l = 880; l <= 1150; l += 0.5) { xs.push(l); a.push(sigA(l) * 1e24); e.push(sigE(l) * 1e24); }
+  chXS.set({
+    x: { min: 880, max: 1150, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: 0, label: '断面積 (10⁻²⁴ m²)', fmt: v => v.toFixed(3) },
+    series: [{ x: xs, y: a, color: '--pump', label: '吸収 σa' }, { x: xs, y: e, color: '--sig', label: '放出 σe' }],
+    vlines: [{ x: P.lp, color: '--pump', label: `励起 ${P.lp}` }, { x: P.ls, color: '--sig', label: `信号 ${P.ls}` }],
+  });
+}
+
+/* ---------- schematic ---------- */
+let last = null;
+function drawSchem() {
+  const cv = $('#schem'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, Hh);
+  const mono = cssVar('--font-mono'), body = cssVar('--font-body');
+  const narrow = W < 560;
+  const fs = narrow ? 10 : 11.5;
+  const padX = narrow ? 64 : 120;
+  const x0 = padX, x1 = W - padX, yc = 72, th = 14;
+  const ink = cssVar('--ink'), muted = cssVar('--muted'), line = cssVar('--line');
+  const lo = hexRGB(cssVar('--inv-lo')), hi = hexRGB(cssVar('--inv-hi'));
+  // fiber colored by inversion
+  const r = last;
+  const nmax = r ? Math.max(...r.n2) : 0;
+  const scaleMax = Math.max(0.05, Math.min(1, Math.ceil(nmax * 10) / 10));
+  const nx = Math.max(2, Math.floor(x1 - x0));
+  for (let i = 0; i < nx; i++) {
+    let t = 0;
+    if (r) { const zi = (i / (nx - 1)) * (r.n2.length - 1); const k = Math.floor(zi), f = zi - k; const v = r.n2[k] * (1 - f) + (r.n2[Math.min(k + 1, r.n2.length - 1)] || 0) * f; t = clamp(v / scaleMax, 0, 1); }
+    ctx.fillStyle = `rgb(${mix(lo, hi, t).join(',')})`;
+    ctx.fillRect(x0 + i, yc - th / 2, 1.5, th);
+  }
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, yc - th / 2 + 0.5, x1 - x0 - 1, th - 1);
+  // combiners
+  const comb = (x) => { ctx.fillStyle = cssVar('--panel'); ctx.strokeStyle = muted; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.rect(x - 9, yc - 11, 18, 22); ctx.fill(); ctx.stroke(); };
+  // arrows
+  const arrow = (xa, ya, xb, yb, color, lw) => {
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
+    const ang = Math.atan2(yb - ya, xb - xa), s = 6 + lw;
+    ctx.beginPath(); ctx.moveTo(xb, yb); ctx.lineTo(xb - s * Math.cos(ang - 0.45), yb - s * Math.sin(ang - 0.45)); ctx.lineTo(xb - s * Math.cos(ang + 0.45), yb - s * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill();
+  };
+  const sigC = cssVar('--sig'), pumpC = cssVar('--pump'), asefC = cssVar('--asef');
+  arrow(8, yc, x0 - 14, yc, sigC, 2);
+  arrow(x1 + 12, yc, W - 8, yc, sigC, 2.6);
+  if (P.Ppf > 0) arrow(x0 - 30, yc + 44, x0 - 7, yc + 13, pumpC, 2);
+  if (P.Ppb > 0) arrow(x1 + 30, yc + 44, x1 + 7, yc + 13, pumpC, 2);
+  comb(x0); comb(x1);
+  ctx.textBaseline = 'alphabetic';
+  const txt = (s, x, y, al, c, f) => { ctx.fillStyle = c; ctx.font = f || `${fs}px ${mono}`; ctx.textAlign = al; ctx.fillText(s, x, y); };
+  txt('信号入力', 8, 16, 'left', muted, `${fs}px ${body}`);
+  txt(fmtWs(P.PsIn_mW * 1e-3), 8, 34, 'left', sigC, `600 ${fs + 1}px ${mono}`);
+  txt(`${P.ls} nm`, 8, 50, 'left', muted);
+  txt('出力信号', W - 8, 16, 'right', muted, `${fs}px ${body}`);
+  if (r) {
+    txt(fmtWs(r.out.sig), W - 8, 34, 'right', sigC, `600 ${fs + 1}px ${mono}`);
+    ctx.font = `${fs}px ${mono}`;
+    const rp = '残留励起 ' + fmtWs(r.pf[r.pf.length - 1]);
+    const as = 'ASE ' + fmtWs(r.out.aseF);
+    if (narrow) { txt(as, W - 8, 50, 'right', asefC); }
+    else { txt(rp, W - 8, 50, 'right', pumpC); const w = ctx.measureText(rp).width; txt(as + '  ', W - 8 - w, 50, 'right', asefC); }
+  }
+  if (P.Ppf > 0) txt(`励起 ${fmtWs(P.Ppf)}`, x0 - 30, yc + 58, 'left', pumpC);
+  if (P.Ppb > 0) txt(`励起 ${fmtWs(P.Ppb)}`, x1 + 30, yc + 58, 'right', pumpC);
+  txt('z = 0', x0 + 2, yc + 24, 'left', muted);
+  txt(`z = ${P.L} m`, x1 - 2, yc + 24, 'right', muted);
+  // inversion scale bar
+  const by = Hh - 14, bw = Math.min(160, (x1 - x0) * 0.4), bx = (x0 + x1) / 2 - bw / 2;
+  const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  g.addColorStop(0, `rgb(${lo.join(',')})`); g.addColorStop(1, `rgb(${hi.join(',')})`);
+  ctx.fillStyle = g; ctx.fillRect(bx, by, bw, 6);
+  txt('N₂/N  0', bx - 6, by + 7, 'right', muted);
+  txt(`${Math.round(scaleMax * 100)} %`, bx + bw + 6, by + 7, 'left', muted);
+}
+function hexRGB(c) {
+  c = c.trim();
+  if (c.startsWith('#')) { const h = c.length === 4 ? c.slice(1).split('').map(x => x + x).join('') : c.slice(1); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); }
+  const m = c.match(/\d+/g); return m ? m.slice(0, 3).map(Number) : [128, 128, 128];
+}
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+/* ---------- worker ---------- */
+const SRC = $('#solver').textContent;
+let worker = null, sweepWorker = null;
+function makeWorker() {
+  try { const url = URL.createObjectURL(new Blob([SRC], { type: 'text/javascript' })); return new Worker(url); } catch (e) { return null; }
+}
+worker = makeWorker();
+let busy = false, pending = false, runId = 0;
+function params() { return Object.assign({}, P, FIXED); }
+function schedule() {
+  if (!worker) { setTimeout(() => { last = simulate(params()); render(); }, 0); return; }
+  if (busy) { pending = true; return; }
+  busy = true; pending = false;
+  worker.postMessage({ type: 'run', id: ++runId, params: params() });
+}
+if (worker) {
+  worker.onmessage = (e) => {
+    if (e.data.type !== 'result') return;
+    busy = false;
+    last = e.data.r; render();
+    if (pending) schedule();
+  };
+  worker.onerror = () => { worker = null; busy = false; schedule(); };
+}
+
+/* ---------- render ---------- */
+let unitDbm = false;
+function render() {
+  const r = last; if (!r) return;
+  const o = r.out;
+  const launched = P.Ppf + P.Ppb;
+  const gain = dB(o.sig / o.sigIn);
+  const eff = launched > 0 ? (o.sig - o.sigIn) / launched : NaN;
+  const absorbed = launched - o.pumpRes;
+  let hmax = -Infinity, hz = 0; r.heat.forEach((h, i) => { if (h > hmax) { hmax = h; hz = r.z[i]; } });
+  const snr = dB(o.sig / Math.max(o.aseF, 1e-15));
+  const nmax = Math.max(...r.n2), navg = r.n2.reduce((a, b) => a + b, 0) / r.n2.length;
+  const kp = [
+    { k: '出力信号', c: '--sig', v: fmtW(o.sig), s: `利得 ${gain.toFixed(1)} dB` },
+    { k: '光-光変換効率', c: '--sig', v: [isFinite(eff) ? (eff * 100).toFixed(1) : '—', '%'], s: absorbed > 0 ? `吸収励起比 ${((o.sig - o.sigIn) / absorbed * 100).toFixed(1)} %` : '励起なし' },
+    { k: '残留励起', c: '--pump', v: fmtW(o.pumpRes), s: launched > 0 ? `投入の ${(o.pumpRes / launched * 100).toFixed(1)} %` : '—' },
+    { k: '前方 ASE', c: '--asef', v: fmtW(o.aseF), s: `信号/ASE ${isFinite(snr) ? snr.toFixed(1) : '—'} dB` },
+    { k: '後方 ASE', c: '--aseb', v: fmtW(o.aseB), s: `入力端へ戻る` },
+    { k: '最大熱負荷', c: '--heat', v: [hmax.toFixed(hmax < 10 ? 2 : 1), 'W/m'], s: `z = ${hz.toFixed(2)} m` },
+  ];
+  $('#kpis').innerHTML = kp.map(x => `<div class="kpi"><div class="k"><i style="background:var(${x.c})"></i>${x.k}</div><div class="v">${x.v[0]}<span>${x.v[1]}</span></div><div class="s">${x.s}</div></div>`).join('');
+
+  // status chips
+  const chips = [];
+  chips.push(r.converged ? ['ok', `収束 (${r.iters} 回反復)`] : ['bad', `未収束 (残差 ${r.err.toExponential(1)})`]);
+  const ms = modeInfo(P.coreD, P.NA, P.ls);
+  if (ms.V > 2.405) chips.push(['info', `マルチモードコア (V = ${ms.V.toFixed(2)})、基本モードで近似`]);
+  if (o.aseF > 0.1 * o.sig) chips.push(['warn', '前方 ASE が信号の 10 % 超。シード不足か利得過大']);
+  if (launched > 0 && o.aseB > 0.05 * launched) chips.push(['warn', '後方 ASE が強い。入力側にアイソレータが必要']);
+  if (gain > 40) chips.push(['warn', `単段で ${gain.toFixed(0)} dB は寄生発振の危険あり`]);
+  if (launched > 0 && o.pumpRes > 0.3 * launched) chips.push(['info', '励起の 30 % 超が未吸収。ファイバーを長くできます']);
+  if (gain < 0 && launched > 0) chips.push(['warn', '信号が吸収されている。長すぎるか励起不足']);
+  $('#status').innerHTML = chips.map(([c, t]) => `<span class="chip ${c}">${t}</span>`).join('');
+  $('#schem-sub').textContent = `平均反転 ${(navg * 100).toFixed(1)} %、最大 ${(nmax * 100).toFixed(1)} %`;
+
+  // power chart
+  const z = Array.from(r.z);
+  const conv = unitDbm ? (a) => Array.from(a, dBm) : (a) => Array.from(a);
+  const tipF = (a) => Array.from(a);
+  const ser = [
+    { x: z, y: conv(r.sig), tipY: tipF(r.sig), color: '--sig', label: '信号', w: 2.4 },
+    { x: z, y: conv(r.pf), tipY: tipF(r.pf), color: '--pump', label: '前方励起' },
+    { x: z, y: conv(r.pb), tipY: tipF(r.pb), color: '--pump', label: '後方励起', dash: true },
+    { x: z, y: conv(r.aseF), tipY: tipF(r.aseF), color: '--asef', label: '前方 ASE' },
+    { x: z, y: conv(r.aseB), tipY: tipF(r.aseB), color: '--aseb', label: '後方 ASE', dash: true },
+  ].filter(s => !(s.label.includes('励起') && Math.max(...s.tipY) <= 0));
+  let ymaxDbm = Math.max(...ser.map(s => Math.max(...s.y)));
+  chPower.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: unitDbm ? { label: 'パワー (dBm)', min: Math.max(-40, Math.floor(Math.min(...ser.map(s => Math.min(...s.y.filter(isFinite)))) / 10) * 10), max: Math.ceil((ymaxDbm + 2) / 5) * 5, fmt: fmtWs }
+                : { label: 'パワー (W)', zero: true, fmt: fmtWs },
+    series: ser,
+  });
+
+  // inversion
+  const ntr = sigA(P.ls) / (sigA(P.ls) + sigE(P.ls));
+  chInv.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: { min: 0, max: Math.max(Math.ceil((nmax * 100 + 3) / 10) * 10, Math.ceil((ntr * 100 + 3) / 5) * 5), label: 'N₂/N (%)', fmt: v => v.toFixed(2) + ' %' },
+    series: [{ x: z, y: Array.from(r.n2, v => v * 100), color: '--inv', label: '反転分布', fill: true, w: 2 }],
+    hlines: [{ y: ntr * 100, color: '--sig', label: `透明点 ${(ntr * 100).toFixed(1)} %` }],
+  });
+
+  // heat
+  chHeat.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: { label: '熱負荷 (W/m)', zero: true, fmt: v => v.toFixed(3) + ' W/m' },
+    series: [{ x: z, y: Array.from(r.heat), color: '--heat', label: '熱負荷', fill: true, w: 2 }],
+  });
+
+  // spectrum
+  const res = P.aseRes;
+  const sF = r.specF.map(p => dBm(p / res)), sB = r.specB.map(p => dBm(p / res));
+  const sigDbm = dBm(o.sig);
+  const smax = Math.max(sigDbm, ...sF, ...sB);
+  chSpec.set({
+    x: { min: P.aseMin, max: P.aseMax, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: Math.min(-60, Math.floor((smax - 70) / 10) * 10), max: Math.ceil((smax + 5) / 10) * 10, label: 'dBm/nm', fmt: v => v.toFixed(1) + ' dBm/nm' },
+    series: [
+      { x: r.aseL, y: sF, color: '--asef', label: '前方 ASE (出力端)', w: 1.8 },
+      { x: r.aseL, y: sB, color: '--aseb', label: '後方 ASE (入力端)', w: 1.6, dash: true },
+    ],
+    stems: [{ x: P.ls, y: sigDbm, color: '--sig', label: `${sigDbm.toFixed(1)} dBm`, legend: '信号 (全パワー)' }],
+  });
+  drawSchem();
+}
+
+$('#u-w').addEventListener('click', () => { unitDbm = false; $('#u-w').setAttribute('aria-pressed', 'true'); $('#u-dbm').setAttribute('aria-pressed', 'false'); render(); });
+$('#u-dbm').addEventListener('click', () => { unitDbm = true; $('#u-w').setAttribute('aria-pressed', 'false'); $('#u-dbm').setAttribute('aria-pressed', 'true'); render(); });
+
+/* ---------- copy helpers ---------- */
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 1800); }
+async function copyText(txt, okMsg) {
+  try { await navigator.clipboard.writeText(txt); toast(okMsg); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
+    ta.remove(); toast(ok ? okMsg : 'クリップボードに書き込めませんでした');
+  }
+}
+$('#copy-z').addEventListener('click', () => {
+  const r = last; if (!r) return;
+  const rows = ['z_m,signal_W,pump_fwd_W,pump_bwd_W,ase_fwd_W,ase_bwd_W,n2_ratio,heat_W_per_m'];
+  for (let i = 0; i < r.z.length; i++) rows.push([r.z[i], r.sig[i], r.pf[i], r.pb[i], r.aseF[i], r.aseB[i], r.n2[i], r.heat[i]].map(v => +v.toPrecision(6)).join(','));
+  copyText(rows.join('\n'), `${r.z.length} 行をコピーしました`);
+});
+
+/* ---------- sweep ---------- */
+const SW = {
+  pump: { unit: 'W', label: '励起パワー合計 (W)', range: () => [0, Math.max(1, +(2 * (P.Ppf + P.Ppb)).toPrecision(3))], log: false },
+  L: { unit: 'm', label: 'ファイバー長 (m)', range: () => [0.1, +(Math.max(1, 3 * P.L)).toPrecision(3)], log: false },
+  seed: { unit: 'mW', label: '信号入力 (mW, 対数)', range: () => [0.001, 1000], log: true },
+  ls: { unit: 'nm', label: '信号波長 (nm)', range: () => [1010, 1110], log: false },
+  lp: { unit: 'nm', label: '励起波長 (nm)', range: () => [905, 985], log: false },
+};
+const swVar = $('#sw-var');
+function resetSweepRange() {
+  const s = SW[swVar.value]; const [a, b] = s.range();
+  $('#sw-from').value = a; $('#sw-to').value = b;
+  $('#sw-u1').textContent = `(${s.unit})`; $('#sw-u2').textContent = `(${s.unit})`;
+}
+swVar.addEventListener('change', resetSweepRange);
+let sweepId = 0, sweepPts = [], sweepMeta = null;
+$('#sw-run').addEventListener('click', () => {
+  const v = swVar.value, s = SW[v];
+  let a = parseFloat($('#sw-from').value), b = parseFloat($('#sw-to').value);
+  const n = clamp(Math.round(parseFloat($('#sw-n').value) || 21), 3, 80);
+  $('#sw-n').value = n;
+  if (!isFinite(a) || !isFinite(b) || a === b) { toast('開始と終了に異なる数値を入れてください'); return; }
+  if (v === 'L') { a = Math.max(0.05, a); b = Math.max(0.05, b); }
+  if (s.log) { a = Math.max(1e-6, a); b = Math.max(1e-6, b); }
+  if (v === 'pump') { a = Math.max(0, a); b = Math.max(0, b); }
+  const xs = [];
+  for (let i = 0; i < n; i++) { const t = i / (n - 1); xs.push(s.log ? a * Math.pow(b / a, t) : a + (b - a) * t); }
+  if (sweepWorker) sweepWorker.terminate();
+  sweepWorker = makeWorker();
+  sweepPts = []; sweepMeta = { v, base: params(), xs };
+  const id = ++sweepId;
+  $('#sw-run').textContent = '計算中…'; $('#sw-run').disabled = true; $('#sw-copy').disabled = true;
+  $('#sw-prog').style.width = '0%';
+  const done = () => { $('#sw-run').textContent = '掃引を実行'; $('#sw-run').disabled = false; $('#sw-copy').disabled = !sweepPts.length; $('#sw-prog').style.width = '100%'; renderSweep(true); };
+  if (!sweepWorker) {
+    // fallback: main thread, chunked
+    let i = 0;
+    const stepF = () => {
+      if (id !== sweepId) return;
+      const p = sweepParams(sweepMeta.base, v, xs[i]); const r = simulate(p);
+      sweepPts.push({ x: xs[i], sig: r.out.sig, sigIn: r.out.sigIn, pump: p.Ppf + p.Ppb, pumpRes: r.out.pumpRes, aseF: r.out.aseF, aseB: r.out.aseB, conv: r.converged });
+      i++; $('#sw-prog').style.width = (i / xs.length * 100) + '%'; renderSweep(false);
+      if (i < xs.length) setTimeout(stepF, 0); else done();
+    };
+    setTimeout(stepF, 0); return;
+  }
+  sweepWorker.onmessage = (e) => {
+    const m = e.data; if (m.id !== id) return;
+    if (m.type === 'sweep-progress') { sweepPts.push(m.pt); $('#sw-prog').style.width = ((m.i + 1) / m.n * 100) + '%'; renderSweep(false); }
+    else if (m.type === 'sweep-done') done();
+  };
+  sweepWorker.postMessage({ type: 'sweep', id, params: sweepMeta.base, v, xs });
+});
+function renderSweep(final) {
+  if (!sweepMeta || !sweepPts.length) return;
+  const s = SW[sweepMeta.v];
+  const xs = sweepPts.map(p => s.log ? Math.log10(p.x) : p.x);
+  const xr = sweepMeta.xs.map(x => s.log ? Math.log10(x) : x);
+  const series = [
+    { x: xs, y: sweepPts.map(p => p.sig), color: '--sig', label: '出力信号', w: 2.4, dots: true },
+    { x: xs, y: sweepPts.map(p => p.pumpRes), color: '--pump', label: '残留励起', dots: true },
+    { x: xs, y: sweepPts.map(p => p.aseF), color: '--asef', label: '前方 ASE', dots: true },
+    { x: xs, y: sweepPts.map(p => p.aseB), color: '--aseb', label: '後方 ASE', dash: true, dots: true },
+  ];
+  const marks = [];
+  let sub = '';
+  if (final) {
+    let bi = 0; sweepPts.forEach((p, i) => { if (p.sig > sweepPts[bi].sig) bi = i; });
+    if (sweepMeta.v !== 'pump' && sweepMeta.v !== 'seed') {
+      marks.push({ x: xs[bi], y: sweepPts[bi].sig, color: '--sig', label: `最大 ${fmtWs(sweepPts[bi].sig)} @ ${+sweepPts[bi].x.toPrecision(4)} ${s.unit}` });
+      sub = `出力最大: ${+sweepPts[bi].x.toPrecision(4)} ${s.unit} で ${fmtWs(sweepPts[bi].sig)}`;
+    }
+    if (sweepMeta.v === 'pump' && sweepPts.length >= 4) {
+      const h = sweepPts.slice(Math.floor(sweepPts.length / 2));
+      const mx = h.reduce((a, p) => a + p.pump, 0) / h.length, my = h.reduce((a, p) => a + p.sig, 0) / h.length;
+      let sxy = 0, sxx = 0; h.forEach(p => { sxy += (p.pump - mx) * (p.sig - my); sxx += (p.pump - mx) ** 2; });
+      const slope = sxx > 0 ? sxy / sxx : NaN; const th = isFinite(slope) && slope > 0 ? mx - my / slope : NaN;
+      sub = `スロープ効率 ${(slope * 100).toFixed(1)} %（後半の点で直線近似）` + (isFinite(th) && th > 0 ? `、外挿しきい値 ${fmtWs(th)}` : '');
+    }
+    const nc = sweepPts.filter(p => !p.conv).length;
+    if (nc) sub += `　未収束 ${nc} 点`;
+    $('#sw-sub').textContent = sub || '完了';
+  } else $('#sw-sub').textContent = `計算中 ${sweepPts.length} / ${sweepMeta.xs.length}`;
+  chSweep.set({
+    x: { min: Math.min(...xr), max: Math.max(...xr), label: s.label, unit: '', fmt: v => s.log ? fmtWs(Math.pow(10, v) * 1e-3) + ' 入力' : (+v.toPrecision(4)) + ' ' + s.unit },
+    y: { label: 'パワー (W)', zero: true, fmt: fmtWs },
+    series, marks,
+  });
+  const head = `<tr><th>${s.label.replace(/,.*\)/, ')')}</th><th>出力信号</th><th>利得 dB</th><th>励起投入</th><th>残留励起</th><th>前方ASE</th><th>後方ASE</th><th>効率 %</th></tr>`;
+  const rows = sweepPts.map(p => `<tr><td>${+p.x.toPrecision(4)}</td><td>${fmtWs(p.sig)}</td><td>${dB(p.sig / p.sigIn).toFixed(2)}</td><td>${fmtWs(p.pump)}</td><td>${fmtWs(p.pumpRes)}</td><td>${fmtWs(p.aseF)}</td><td>${fmtWs(p.aseB)}</td><td>${p.pump > 0 ? ((p.sig - p.sigIn) / p.pump * 100).toFixed(1) : '—'}</td></tr>`).join('');
+  $('#sw-tbl').innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+$('#sw-copy').addEventListener('click', () => {
+  if (!sweepPts.length) return;
+  const s = SW[sweepMeta.v];
+  const rows = [`${sweepMeta.v}_${s.unit},signal_out_W,gain_dB,pump_W,pump_residual_W,ase_fwd_W,ase_bwd_W,converged`];
+  sweepPts.forEach(p => rows.push([p.x, p.sig, dB(p.sig / p.sigIn), p.pump, p.pumpRes, p.aseF, p.aseB].map(v => +(+v).toPrecision(6)).join(',') + ',' + p.conv));
+  copyText(rows.join('\n'), `${sweepPts.length} 行をコピーしました`);
+});
+
+/* ---------- boot ---------- */
+applyPumpRange();
+syncInputs();
+presetSel.value = matchPreset();
+updateDerived();
+drawXS();
+resetSweepRange();
+schedule();
+})();
+</script>
+</body>
+</html>
