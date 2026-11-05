@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Ybアンプ計算モデル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: technical note. Sticky contents rail on wide screens, one reading column (~72ch),
+   numbered equations, wide tables scroll inside their own frame. Palette shared with the simulator. */
+:root {
+  --bg: #EEF1F4;
+  --panel: #FFFFFF;
+  --ink: #15202C;
+  --muted: #5B6A7A;
+  --line: #D6DDE5;
+  --grid: #E6EBF0;
+  --accent: #2A55C8;
+  --sig: #C42F3B;
+  --pump: #0A857F;
+  --warn: #A86A0B;
+  --hi: #BD3326;
+  --mid: #A86A0B;
+  --lo: #1D7F47;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+    --accent: #7FA0FF; --sig: #FF6C74; --pump: #3CCAC0; --warn: #E8AE4A; --hi: #FF7A6B; --mid: #E8AE4A; --lo: #4CC883;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+  --accent: #7FA0FF; --sig: #FF6C74; --pump: #3CCAC0; --warn: #E8AE4A; --hi: #FF7A6B; --mid: #E8AE4A; --lo: #4CC883;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; align-items: start; }
+@media (max-width: 920px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); font-size: 0.82rem; line-height: 1.5; }
+@media (max-width: 920px) { nav.toc { position: static; } }
+nav.toc b { display: block; font-size: 0.7rem; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+nav.toc a { color: var(--muted); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); }
+nav.toc a span { font-family: var(--font-mono); font-size: 0.74rem; margin-right: 6px; }
+article { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 30px clamp(16px, 4vw, 44px) 40px; min-width: 0; }
+header.doc { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 8px; }
+header.doc .eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; color: var(--muted); }
+h1 { font-size: 1.65rem; line-height: 1.3; margin: 6px 0 10px; text-wrap: balance; }
+header.doc p { margin: 0; color: var(--muted); max-width: 70ch; }
+h2 { font-size: 1.2rem; margin: 40px 0 6px; padding-top: 6px; text-wrap: balance; display: flex; align-items: baseline; gap: 10px; }
+h2 .no { font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); font-weight: 500; }
+h3 { font-size: 1rem; margin: 24px 0 4px; }
+p, li { max-width: 72ch; }
+p { margin: 10px 0; }
+ul, ol { padding-left: 1.3em; }
+li { margin: 4px 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; }
+a { color: var(--accent); }
+.eq { margin: 14px 0; padding: 4px 0; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+mjx-container[jax="SVG"][display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: 2px 0; }
+.note { border-left: 3px solid var(--line); padding: 4px 0 4px 14px; color: var(--muted); font-size: 0.9rem; margin: 14px 0; }
+.note b { color: var(--ink); }
+.tbl { overflow-x: auto; margin: 14px 0 18px; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.84rem; line-height: 1.55; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { background: var(--bg); color: var(--muted); font-weight: 600; font-size: 0.76rem; letter-spacing: 0.02em; white-space: nowrap; }
+td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+table.dev td { min-width: 9em; }
+table.dev td:first-child { min-width: 7.5em; font-weight: 600; }
+table.dev td:nth-child(2) { min-width: 0; white-space: nowrap; }
+table.dev td:last-child { min-width: 7em; }
+.lvl { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.lvl.hi { color: var(--hi); } .lvl.mid { color: var(--mid); } .lvl.lo { color: var(--lo); }
+details { margin: 10px 0; }
+summary { cursor: pointer; color: var(--accent); font-size: 0.88rem; }
+.steps { counter-reset: s; list-style: none; padding: 0; display: grid; gap: 10px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 2em minmax(0, 1fr); gap: 4px; }
+.steps li::before { content: counter(s); font-family: var(--font-mono); color: var(--accent); font-weight: 500; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="目次">
+    <b>目次</b>
+    <ol>
+      <li><a href="#s1"><span>1</span>何を解いているか</a></li>
+      <li><a href="#s2"><span>2</span>記号</a></li>
+      <li><a href="#s3"><span>3</span>上準位の占有率</a></li>
+      <li><a href="#s4"><span>4</span>伝搬方程式と境界条件</a></li>
+      <li><a href="#s5"><span>5</span>オーバーラップ係数</a></li>
+      <li><a href="#s6"><span>6</span>断面積</a></li>
+      <li><a href="#s7"><span>7</span>吸収スペックから濃度へ</a></li>
+      <li><a href="#s8"><span>8</span>数値解法</a></li>
+      <li><a href="#s9"><span>9</span>表示している派生量</a></li>
+      <li><a href="#s10"><span>10</span>実機との差が出るところ</a></li>
+      <li><a href="#s11"><span>11</span>出力ごとの信頼度</a></li>
+      <li><a href="#s12"><span>12</span>実機に合わせる手順</a></li>
+    </ol>
+  </nav>
+
+  <article>
+    <header class="doc">
+      <div class="eyebrow">Ybファイバーアンプ シミュレータ · 技術資料</div>
+      <h1>Ybファイバーアンプの計算モデル</h1>
+      <p>シミュレータが実際に計算している式を、コードと同じ順序で書き出しました。後半では、モデルの仮定が実機とずれる箇所を、このモデル自身で計算した感度の例と合わせて整理しています。</p>
+    </header>
+
+    <h2 id="s1"><span class="no">1</span>何を解いているか</h2>
+    <p>ファイバー軸方向 \(z\)（\(0 \le z \le L\)）の 1 次元・定常状態のモデルです。Yb³⁺ を 2 準位系（基底 \({}^2F_{7/2}\)、励起 \({}^2F_{5/2}\)）として扱い、各位置の上準位占有率 \(n_2(z)\) と、信号・励起・ASE の各光パワー \(P_k(z)\) を同時に求めます。</p>
+    <p>光は「チャネル」の集まりとして扱います。チャネルは次の 5 種類です。</p>
+    <ul>
+      <li>信号（前方のみ、波長 \(\lambda_s\)）</li>
+      <li>前方励起・後方励起（波長 \(\lambda_p\)）</li>
+      <li>前方 ASE・後方 ASE（\(\lambda_{\min}\)〜\(\lambda_{\max}\) を \(\Delta\lambda\) 間隔に区切った波長ごと。既定は 970〜1150 nm、2 nm 間隔で 91 波長 × 2 方向）</li>
+    </ul>
+    <p>時間変化、横方向の温度分布、偏光、モード間結合は扱いません。</p>
+
+    <h2 id="s2"><span class="no">2</span>記号</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>記号</th><th>意味</th><th>シミュレータでの入力・既定値</th></tr></thead>
+      <tbody>
+        <tr><td>\(a,\ b\)</td><td>コア半径、内クラッド半径</td><td>コア径・内クラッド径の 1/2</td></tr>
+        <tr><td>\(A = \pi a^2\)</td><td>ドープ領域の面積（コア全体を一様ドープと仮定）</td><td></td></tr>
+        <tr><td>\(N\)</td><td>Yb³⁺ 数密度 [m⁻³]</td><td>濃度を直接入力、または吸収スペックから式 (11) で換算</td></tr>
+        <tr><td>\(n_1,\ n_2\)</td><td>下準位・上準位の占有率（\(n_1 + n_2 = 1\)）</td><td>計算結果</td></tr>
+        <tr><td>\(\tau\)</td><td>上準位寿命</td><td>既定 0.84 ms</td></tr>
+        <tr><td>\(\sigma_{a,k},\ \sigma_{e,k}\)</td><td>チャネル \(k\) の波長での吸収・誘導放出断面積</td><td>6 章</td></tr>
+        <tr><td>\(\Gamma_k\)</td><td>チャネル \(k\) の光とドープ領域の重なり（オーバーラップ係数）</td><td>5 章</td></tr>
+        <tr><td>\(\nu_k = c/\lambda_k\)</td><td>光周波数</td><td></td></tr>
+        <tr><td>\(\alpha\)</td><td>背景損失 [1/m]（全波長で同じ値）</td><td>dB/km で入力。\(\alpha = \text{dB/km} / (1000 \times 4.343)\)</td></tr>
+        <tr><td>\(u_k = \pm 1\)</td><td>伝搬方向（前方 +1、後方 −1）</td><td></td></tr>
+        <tr><td>\(\Delta\nu_k = c\,\Delta\lambda / \lambda_k^2\)</td><td>ASE チャネルの周波数幅</td><td>\(\Delta\lambda\)：ASE 分解能（既定 2 nm）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="s3"><span class="no">3</span>上準位の占有率</h2>
+    <p>各位置での定常レート方程式 \(dn_2/dt = 0\) を解きます。チャネル \(k\) による吸収遷移・誘導放出遷移の速度は、光子束 \(\Gamma_k P_k/(h\nu_k A)\) に断面積を掛けたものです。</p>
+    <div class="eq">\[
+      \frac{dn_2}{dt} = \sum_k \frac{\Gamma_k P_k}{h\nu_k A}\left(\sigma_{a,k}\,n_1 - \sigma_{e,k}\,n_2\right) - \frac{n_2}{\tau} = 0 \tag{1}
+    \]</div>
+    <p>\(n_1 = 1 - n_2\) を代入して解くと次の式になります。すべてのチャネル（前方・後方の励起、信号、全 ASE）の和を取ります。</p>
+    <div class="eq">\[
+      n_2(z) = \frac{\displaystyle\sum_k \frac{\Gamma_k\,\sigma_{a,k}}{h\nu_k A}\,P_k(z)}
+      {\displaystyle\sum_k \frac{\Gamma_k\,(\sigma_{a,k}+\sigma_{e,k})}{h\nu_k A}\,P_k(z) + \frac{1}{\tau}} \tag{2}
+    \]</div>
+    <p class="note"><b>省略している過程:</b> 励起状態吸収、協同アップコンバージョン、イオン対・クラスタによる消光、温度による Stark 準位の占有変化（断面積の温度依存）。Yb では励起状態吸収はほぼ無視できますが、高濃度ファイバーのクラスタやフォトダークニングは実機で効きます（10 章）。</p>
+
+    <h2 id="s4"><span class="no">4</span>伝搬方程式と境界条件</h2>
+    <p>チャネル \(k\) の局所的な利得係数 \(g_k\) と、自然放出の湧き出し項 \(s_k\) を次のように置きます。</p>
+    <div class="eq">\[
+      g_k(z) = \Gamma_k N\left[(\sigma_{a,k}+\sigma_{e,k})\,n_2(z) - \sigma_{a,k}\right] - \alpha
+      \;=\; \Gamma_k N\left(\sigma_{e,k} n_2 - \sigma_{a,k} n_1\right) - \alpha \tag{3}
+    \]</div>
+    <div class="eq">\[
+      s_k(z) = \begin{cases} m\,h\nu_k\,\Delta\nu_k\,\Gamma_k\,\sigma_{e,k}\,N\,n_2(z), & k \text{ が ASE チャネル}\ (m=2)\\[2pt] 0, & \text{信号・励起} \end{cases} \tag{4}
+    \]</div>
+    <p>\(m = 2\) は 2 つの偏光モードの分です。伝搬方程式は次のとおりです。</p>
+    <div class="eq">\[
+      u_k\,\frac{dP_k}{dz} = g_k(z)\,P_k(z) + s_k(z) \tag{5}
+    \]</div>
+    <p>境界条件は、入射端と出射端に反射がない（完全なアイソレーション）という仮定です。</p>
+    <div class="eq">\[
+      P_s(0) = P_{s,\mathrm{in}},\quad P_p^{+}(0) = P_{pf},\quad P_p^{-}(L) = P_{pb},\quad P_{\mathrm{ASE},j}^{+}(0) = 0,\quad P_{\mathrm{ASE},j}^{-}(L) = 0 \tag{6}
+    \]</div>
+    <p>信号は単一周波数として扱い、信号チャネル自体には自然放出項を入れていません。信号波長付近の自然放出は、最も近い ASE チャネルに入ります。</p>
+
+    <h2 id="s5"><span class="no">5</span>オーバーラップ係数</h2>
+    <h3>信号・ASE・コア励起（基本モード）</h3>
+    <p>ステップインデックスの基本モードをガウス分布で近似し、モードフィールド半径 \(w\) に Marcuse の式を使います。</p>
+    <div class="eq">\[
+      V = \frac{2\pi a\,\mathrm{NA}}{\lambda},\qquad
+      \frac{w}{a} = 0.65 + \frac{1.619}{V^{3/2}} + \frac{2.879}{V^{6}} \tag{7}
+    \]</div>
+    <p>強度 \(I(r) \propto \exp(-2r^2/w^2)\) のうち、一様ドープのコア（\(r \le a\)）に入る割合が \(\Gamma\) です。</p>
+    <div class="eq">\[
+      \Gamma(\lambda) = 1 - \exp\!\left(-\frac{2a^2}{w^2}\right) \tag{8}
+    \]</div>
+    <p>ASE はチャネルごとにその波長で \(\Gamma\) を計算します。\(V \gt 2.405\)（マルチモード）でも基本モードだけを考えます。</p>
+    <h3>クラッド励起</h3>
+    <p>励起光が内クラッド全体に一様に広がっている（モード混合が十分）と仮定し、面積比を使います。</p>
+    <div class="eq">\[
+      \Gamma_p = \frac{\pi a^2}{\pi b^2} = \left(\frac{a}{b}\right)^2 \tag{9}
+    \]</div>
+    <p>このとき式 (2) の励起項は \(\sigma_a P_p/(h\nu_p \pi b^2)\) となり、クラッド断面での平均強度を使っていることになります。</p>
+
+    <h2 id="s6"><span class="no">6</span>断面積</h2>
+    <p>内蔵の断面積は、ガラス組成ごとにガウス関数の和で表しています。</p>
+    <div class="eq">\[
+      \sigma(\lambda) = 10^{-24}\,\text{m}^2 \times \sum_i A_i \exp\!\left[-\left(\frac{\lambda - \lambda_i}{w_i}\right)^{2}\right] \tag{10}
+    \]</div>
+    <p>これを 850〜1200 nm の範囲で 0.25 nm 間隔の表にし、表の間は線形補間、範囲外は 0 とします。実測データを読み込んだ場合も、同じ表に変換して使います。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>組成</th><th class="num">σa 915</th><th class="num">σa 976</th><th class="num">σe 976</th><th class="num">σa 1030</th><th class="num">σe 1030</th><th class="num">σa 1064</th><th class="num">σe 1064</th></tr></thead>
+      <tbody>
+        <tr><td>アルミノシリケート</td><td class="num">0.757</td><td class="num">2.539</td><td class="num">2.441</td><td class="num">0.052</td><td class="num">0.710</td><td class="num">0.014</td><td class="num">0.261</td></tr>
+        <tr><td>ゲルマノシリケート</td><td class="num">0.657</td><td class="num">2.381</td><td class="num">2.331</td><td class="num">0.032</td><td class="num">0.619</td><td class="num">0.009</td><td class="num">0.201</td></tr>
+        <tr><td>リン酸シリケート</td><td class="num">0.570</td><td class="num">1.448</td><td class="num">1.381</td><td class="num">0.052</td><td class="num">0.585</td><td class="num">0.018</td><td class="num">0.267</td></tr>
+      </tbody>
+    </table></div>
+    <p>単位は 10⁻²⁴ m²。これらは代表的なスペクトルの形を再現した近似で、測定値ではありません。参考として、アルミノシリケートの 1030 nm での比 \(\sigma_a/\sigma_e = 0.073\) は、McCumber の関係</p>
+    <div class="eq">\[
+      \frac{\sigma_a(\nu)}{\sigma_e(\nu)} = \exp\!\left(\frac{h\nu - \varepsilon}{k_B T}\right) \tag{10'}
+    \]</div>
+    <p>で \(\varepsilon\) を 975.5 nm、\(T = 300\) K としたときの値 0.074 とほぼ一致しています。</p>
+    <details>
+      <summary>ガウス関数のパラメータ（中心 nm, 高さ ×10⁻²⁴ m², 幅 nm）</summary>
+      <div class="tbl"><table>
+        <thead><tr><th>組成</th><th>吸収 \((\lambda_i, A_i, w_i)\)</th><th>放出 \((\lambda_i, A_i, w_i)\)</th></tr></thead>
+        <tbody>
+          <tr><td>Al</td><td><code>(975.5, 2.45, 3.4) (912, 0.70, 18) (948, 0.38, 26) (1005, 0.12, 22) (1040, 0.02, 38)</code></td><td><code>(975.5, 2.45, 3.4) (997, 0.22, 14) (1028, 0.60, 18) (1065, 0.25, 40) (955, 0.07, 18)</code></td></tr>
+          <tr><td>Ge</td><td><code>(975, 2.6, 2.9) (914, 0.62, 16) (947, 0.33, 22) (1004, 0.10, 20) (1040, 0.015, 35)</code></td><td><code>(975, 2.6, 2.9) (996, 0.18, 12) (1027, 0.55, 15) (1062, 0.20, 36) (955, 0.06, 16)</code></td></tr>
+          <tr><td>P</td><td><code>(975.5, 1.35, 4.6) (916, 0.50, 20) (945, 0.30, 25) (1000, 0.12, 25) (1040, 0.025, 40)</code></td><td><code>(975.5, 1.35, 4.6) (1000, 0.25, 16) (1025, 0.45, 22) (1060, 0.25, 42) (955, 0.05, 18)</code></td></tr>
+        </tbody>
+      </table></div>
+    </details>
+
+    <h2 id="s7"><span class="no">7</span>吸収スペックから濃度へ</h2>
+    <p>スペックシートの小信号吸収 \(\alpha_{\mathrm{dB}}\) [dB/m]（基準波長 \(\lambda_{\mathrm{ref}}\)）は、反転がない状態（\(n_2 = 0\)）での式 (3) の値なので、次の関係で \(N\) に換算します。</p>
+    <div class="eq">\[
+      \alpha_{\mathrm{dB}} = \frac{10}{\ln 10}\,\Gamma(\lambda_{\mathrm{ref}})\,\sigma_a(\lambda_{\mathrm{ref}})\,N
+      \quad\Longrightarrow\quad
+      N = \frac{\alpha_{\mathrm{dB}}\,\ln 10}{10\,\Gamma(\lambda_{\mathrm{ref}})\,\sigma_a(\lambda_{\mathrm{ref}})} \tag{11}
+    \]</div>
+    <p>クラッド吸収なら \(\Gamma = (a/b)^2\)、コア吸収なら式 (8) の基本モードの \(\Gamma\) を使います。換算は選んだ断面積の表で行うので、組成を切り替えると同じスペック値でも \(N\) が変わります。</p>
+
+    <h2 id="s8"><span class="no">8</span>数値解法</h2>
+    <h3>空間の離散化</h3>
+    <p>\(z_i = i\,\Delta z\)、\(\Delta z = L/M\)（既定 \(M = 200\)）。1 区間の間で \(g\) と \(s\) を一定とみなせば、式 (5) は厳密に積分できます。</p>
+    <div class="eq">\[
+      P(z_i + u\Delta z) = P(z_i)\,e^{g\Delta z} + s\,\frac{e^{g\Delta z} - 1}{g} \tag{12}
+    \]</div>
+    <p>この指数積分を Heun 法（予測子・修正子）で 2 次精度にしています。</p>
+    <div class="eq">\[
+      \begin{aligned}
+      &\text{予測:}\quad P^{*}_{i+1} = \text{式 (12) に } g_i,\ s_i \text{ を使う}\\
+      &\text{修正:}\quad n_2^{*} = \text{式 (2) に } P^{*}_{i+1} \text{ を入れる},\quad
+      \bar g = \tfrac12\big(g_i + g(n_2^{*})\big),\ \ \bar s = \tfrac12\big(s_i + s(n_2^{*})\big)\\
+      &\phantom{\text{修正:}}\quad P_{i+1} = \text{式 (12) に } \bar g,\ \bar s \text{ を使う}
+      \end{aligned} \tag{13}
+    \]</div>
+    <h3>前方・後方の反復</h3>
+    <p>前方チャネルは \(z=0\) から、後方チャネルは \(z=L\) から積分します。各パスでは、反対向きのチャネルの値として直前のパスの結果を使い、前方パスと後方パスを交互に繰り返します（緩和法）。端面出力の変化が次の条件を満たしたら収束とします。</p>
+    <div class="eq">\[
+      \max_k \frac{\big|P_k^{(m)} - P_k^{(m-1)}\big|}{\big|P_k^{(m)}\big| + 10^{-6}\,P_{\mathrm{ref}}} \lt 10^{-6},\qquad
+      P_{\mathrm{ref}} = P_{pf} + P_{pb} + P_{s,\mathrm{in}} \tag{14}
+    \]</div>
+    <p>反復の上限は 400 回で、超えると画面に「未収束」と表示します。</p>
+    <p class="note"><b>数値誤差は実機との差に比べて無視できます。</b>既定の 10/125 プリセットでは、\(M = 100\)・800 や \(\Delta\lambda = 0.5\) nm にしても出力の差は 0.1 % 未満でした。2 次元マップは \(M = 100\)、\(\Delta\lambda = 4\) nm で計算しています。</p>
+
+    <h2 id="s9"><span class="no">9</span>表示している派生量</h2>
+    <h3>熱負荷</h3>
+    <p>定常状態では、イオンが吸収した正味の光子数と、自然放出で失う光子数が等しくなります（式 (1)）。自然放出光の平均波長を \(\lambda_F = 1005\) nm とすると、残りが熱になります。</p>
+    <div class="eq">\[
+      q(z) = \sum_k \Gamma_k N\left(\sigma_{a,k} n_1 - \sigma_{e,k} n_2\right) P_k \left(1 - \frac{\nu_F}{\nu_k}\right) + \alpha \sum_k P_k \quad [\text{W/m}] \tag{15}
+    \]</div>
+    <h3>利得スペクトル</h3>
+    <p>収束した \(n_2(z)\) を固定し、弱いプローブ光が全長で受ける正味の利得です。</p>
+    <div class="eq">\[
+      G(\lambda)\,[\text{dB}] = \frac{10}{\ln 10}\int_0^L \Big\{\Gamma(\lambda) N\big[(\sigma_a+\sigma_e) n_2(z) - \sigma_a\big] - \alpha\Big\}\,dz \tag{16}
+    \]</div>
+    <h3>OSNR</h3>
+    <p>信号波長に最も近い ASE チャネル \(j^{*}\) の出力を、0.1 nm 幅に換算します。</p>
+    <div class="eq">\[
+      \mathrm{OSNR}_{0.1\,\mathrm{nm}} = 10\log_{10}\frac{P_s(L)}{P^{+}_{\mathrm{ASE},j^{*}}(L)\cdot 0.1\,\text{nm}/\Delta\lambda} \tag{17}
+    \]</div>
+    <h3>飽和パワー・エネルギー</h3>
+    <div class="eq">\[
+      P_{\mathrm{sat}}(\lambda) = \frac{h\nu A}{\Gamma\,(\sigma_a+\sigma_e)\,\tau},\qquad
+      E_{\mathrm{sat}} = P_{\mathrm{sat}}\,\tau = \frac{h\nu A}{\Gamma\,(\sigma_a+\sigma_e)} \tag{18}
+    \]</div>
+    <div class="eq">\[
+      E_{\mathrm{stored}} = h\nu_s\,N A \int_0^L n_2\,dz,\qquad
+      E_{\mathrm{extract}} \approx E_{\mathrm{sat}}(\lambda_s)\,\ln G_s,\quad G_s = \frac{P_s(L)}{P_s(0)} \tag{19}
+    \]</div>
+    <p>\(E_{\mathrm{extract}}\) は、現在の CW 動作時の利得をそのままパルスが使えるとした概算です。</p>
+    <h3>非線形しきい値の目安</h3>
+    <div class="eq">\[
+      A_{\mathrm{eff}} = \pi w^2,\qquad
+      L_{\mathrm{eff}} = \frac{1}{P_s(L)}\int_0^L P_s(z)\,dz \tag{20}
+    \]</div>
+    <div class="eq">\[
+      P_{\mathrm{th}}^{\mathrm{SRS}} = \frac{16\,A_{\mathrm{eff}}}{g_R\,L_{\mathrm{eff}}}\ \ (g_R = 1\times10^{-13}\ \text{m/W}),\qquad
+      P_{\mathrm{th}}^{\mathrm{SBS}} = \frac{21\,A_{\mathrm{eff}}}{g_B\,L_{\mathrm{eff}}}\ \ (g_B = 5\times10^{-11}\ \text{m/W}) \tag{21}
+    \]</div>
+    <p>どちらも受動ファイバー向けの Smith の判定式に、増幅器用の実効長を当てはめたものです。SBS は信号の線幅がブリルアン利得帯域（数十 MHz）より十分狭い場合の値です。</p>
+    <h3>効率</h3>
+    <div class="eq">\[
+      \eta = \frac{P_s(L) - P_s(0)}{P_{pf} + P_{pb}} \tag{22}
+    \]</div>
+    <p>分母はファイバーに入った励起パワーです。掃引のスロープ効率は、励起パワー掃引の後半の点に直線を当てはめた傾きです。</p>
+
+    <h2 id="s10"><span class="no">10</span>実機との差が出るところ</h2>
+    <p>影響の大きい順に並べました。「計算例」は既定の 10/125 プリセット（4.8 dB/m @976、976 nm 前方 10 W、1064 nm 100 mW、3 m）で、このモデルの条件を変えて計算した値です。基準は出力 7.56 W、効率 74.6 %、残留励起 0.95 W です。</p>
+    <div class="tbl"><table class="dev">
+      <thead><tr><th>要因</th><th>影響</th><th>モデルの仮定</th><th>実機で起きること</th><th>計算例</th><th>主に効く出力</th></tr></thead>
+      <tbody>
+        <tr><td>976 nm 励起の波長と線幅</td><td><span class="lvl hi">大</span></td>
+          <td>励起は単一波長。吸収ピークの幅（FWHM）は約 6 nm</td>
+          <td>波長安定化していない LD は線幅が数 nm あり、温度で約 0.3 nm/K ずれる。ピークから外れた成分は吸収が弱い</td>
+          <td>σa は 974 nm で 0.86 倍、978 nm で 0.61 倍。励起 978 nm で出力 6.42 W（−15 %）、979 nm で 5.04 W（−33 %）</td>
+          <td>出力、残留励起、最適長</td></tr>
+        <tr><td>クラッド励起の実効吸収</td><td><span class="lvl hi">大</span></td>
+          <td>励起は内クラッドに一様に広がり、吸収係数は全長で一定（式 9）</td>
+          <td>コアを通らないスキュー光が残るため、実効吸収はスペックより小さく、後半ほど吸収が鈍る（指数関数からずれる）。クラッド形状、曲げ方、励起の入射 NA で変わる</td>
+          <td>実効吸収を 0.7 倍にすると出力 6.47 W（−14 %）、残留励起 2.28 W。6 m にすると差は 1 % 未満になるが、残留励起は 0.05 → 0.29 W</td>
+          <td>最適長、残留励起、出力</td></tr>
+        <tr><td>受動損失</td><td><span class="lvl hi">大</span></td>
+          <td>全波長で同じ背景損失だけ</td>
+          <td>コンバイナの励起透過（9 割前後）、融着損失、アイソレータ、タップなど</td>
+          <td>励起を 0.93 倍、信号入力に 0.1 dB 損失で出力 7.02 W（−7 %）</td>
+          <td>出力、効率</td></tr>
+        <tr><td>吸収スペックの値</td><td><span class="lvl mid">中</span></td>
+          <td>スペック値をそのまま式 (11) で換算</td>
+          <td>仕様には許容幅があり、測定方法（光源の波長・線幅、カットバック長）で値が変わる</td>
+          <td>\(N\) を 0.8 / 1.2 倍で出力 6.95 / 7.87 W（−8 / +4 %）</td>
+          <td>最適長、残留励起</td></tr>
+        <tr><td>断面積（組成・個体差・温度）</td><td><span class="lvl mid">中</span></td>
+          <td>代表的な形の近似、温度は 300 K 相当で固定</td>
+          <td>実際の組成で形が変わる。コアが温まると、McCumber の関係 (10′) により長波長側の σa が増える（300 → 350 K で 1030 nm の σa は約 1.5 倍）</td>
+          <td>1000 nm より長波長の σa を 1.5 倍にすると、1064 nm 信号で −2 %、1030 nm 信号で −3 %。ASE 量は 3 割程度変わる</td>
+          <td>ASE、利得スペクトル、短波長信号の効率</td></tr>
+        <tr><td>端面反射・寄生発振</td><td><span class="lvl mid">中</span></td>
+          <td>反射ゼロ（式 6）</td>
+          <td>斜め劈開やアイソレータでも反射はゼロにならない。1030 nm 付近の利得 \(G\) [dB] に対して、往復で \(2G + R_1 + R_2 \gt 0\) dB になると発振する</td>
+          <td>既定条件でも 1034 nm の利得は 46 dB。両端の反射の合計が −92 dB を超えると発振条件に入る</td>
+          <td>後方 ASE、安定性、出力</td></tr>
+        <tr><td>モード・オーバーラップ</td><td><span class="lvl lo">小〜中</span></td>
+          <td>直線ファイバーの基本モードをガウス近似。コア全体を一様ドープ</td>
+          <td>屈折率・ドープ分布の不均一（中心のくぼみなど）、曲げによるモードの変形と縮小、LMA では高次モードの混入</td>
+          <td>NA を 0.065 / 0.085 にして \(\Gamma_s\) を 0.685 / 0.826（基準 0.770）にすると出力は −2 / +1 %、前方 ASE は +20 / −10 %</td>
+          <td>ASE、OSNR、非線形しきい値</td></tr>
+        <tr><td>上準位寿命</td><td><span class="lvl lo">小</span></td>
+          <td>一定値</td>
+          <td>組成と濃度で 0.7〜1.5 ms 程度ばらつく</td>
+          <td>0.7 / 1.0 ms で出力 −1 / +1 %。飽和が強い高出力ほど効かない</td>
+          <td>小信号利得、低出力の動作</td></tr>
+        <tr><td>フォトダークニング・濃度消光</td><td><span class="lvl lo">長期で大</span></td>
+          <td>なし</td>
+          <td>反転が高い状態で使い続けると、損失が時間とともに増える（アルミノシリケートで起きやすく、リン酸系は起きにくい）。高濃度ではクラスタによる飽和しない吸収</td>
+          <td>このモデルでは計算できない。背景損失を増やして近似する</td>
+          <td>長期の出力低下</td></tr>
+        <tr><td>パルス動作</td><td><span class="lvl lo">条件次第</span></td>
+          <td>CW の定常状態</td>
+          <td>繰り返しが 1/τ（約 1 kHz）より十分速ければ平均パワーは CW に近い。遅いとパルス間に反転が貯まり、ASE が増えてエネルギー抽出の動きが変わる</td>
+          <td>式 (19) の取り出し可能エネルギーは概算</td>
+          <td>パルスエネルギー、ASE</td></tr>
+        <tr><td>非線形効果・TMI</td><td><span class="lvl lo">高出力で大</span></td>
+          <td>伝搬は解かず、式 (21) のしきい値だけ</td>
+          <td>SRS・SBS は信号の線幅、ASE の種、曲げで変わり、判定式は 2 倍程度の幅がある。LMA の高出力では横モード不安定性（TMI）が起きるが、モデルにない</td>
+          <td>—</td>
+          <td>出力の上限</td></tr>
+        <tr><td>数値誤差</td><td><span class="lvl lo">無視できる</span></td>
+          <td>\(M = 200\)、\(\Delta\lambda = 2\) nm</td>
+          <td>—</td>
+          <td>\(M\) と \(\Delta\lambda\) を変えても 0.1 % 未満</td>
+          <td>—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="s11"><span class="no">11</span>出力ごとの信頼度</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>出力</th><th>信頼度</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>条件どうしの比較（前方と後方、品種の違い、長さを変えたときの傾向）</td><td><span class="lvl lo">高い</span></td><td>上の誤差の多くは両方に同じ向きで入る</td></tr>
+        <tr><td>出力パワー・効率の絶対値</td><td><span class="lvl mid">中</span></td><td>受動損失、励起波長、実効吸収がすべて「実機の方が低い」向きに働くため、モデルは高めに出やすい。合わせ込み前は 1〜3 割の差を見込む</td></tr>
+        <tr><td>最適長・残留励起</td><td><span class="lvl mid">中〜低</span></td><td>実効吸収（励起波長、スキュー光、スペック値）に直接比例して動く</td></tr>
+        <tr><td>ASE パワー・OSNR</td><td><span class="lvl hi">低い</span></td><td>利得の指数関数なので、利得が 1 dB ずれると ASE は 2 割以上変わる。断面積の短波長側とオーバーラップに敏感</td></tr>
+        <tr><td>SRS / SBS しきい値</td><td><span class="lvl hi">低い</span></td><td>判定式そのものに 2 倍程度の幅がある。桁の目安として使う</td></tr>
+        <tr><td>熱負荷</td><td><span class="lvl mid">中</span></td><td>量子欠損の部分は正確。背景損失や接続部の局所的な発熱は入っていない</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="s12"><span class="no">12</span>実機に合わせる手順</h2>
+    <ol class="steps">
+      <li><span><b>励起波長を実測値にする。</b>使う LD のスペクトルの中心を「励起波長」に入れます。976 nm 帯の LD は動作電流と温度で波長が動くので、実際の動作点で測った値を使います。</span></li>
+      <li><span><b>励起パワーはファイバーに入った値にする。</b>コンバイナの出力側で測った値、またはコンバイナの透過率を掛けた値を入れます。</span></li>
+      <li><span><b>実効吸収を測って入れる。</b>信号なし・低い励起パワー（吸収が飽和しない範囲）で、長さを変えて励起の透過を測ると実効吸収 [dB/m] が分かります。それを実際の励起波長を基準波長として入力すると、スキュー光の影響もまとめて取り込めます。</span></li>
+      <li><span><b>受動損失を背景損失に足す。</b>融着や部品の損失を全長で割って dB/km に換算し、背景損失に加えます（例：0.2 dB を 3 m に分散させると約 67 dB/km）。端に集中する損失を一様に分けるので近似です。</span></li>
+      <li><span><b>小信号利得で断面積とオーバーラップを確認する。</b>低出力の動作点で信号波長を変えて利得を測り、利得スペクトル（式 16）と比べます。合わない場合は、メーカーの断面積データを読み込みます。</span></li>
+      <li><span><b>高出力の動作点で温度の影響を見る。</b>熱負荷が大きい区間では長波長側の吸収が増えます。短波長（1030 nm 付近）の信号で効率が下がる場合はこれが原因の候補です。</span></li>
+    </ol>
+  </article>
+</div>
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], tags: 'none' },
+  svg: { fontCache: 'global' },
+  options: { enableMenu: false },
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js" async></script>
+</body>
+</html>

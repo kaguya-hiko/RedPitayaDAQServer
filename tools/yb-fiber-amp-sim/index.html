@@ -1,0 +1,1690 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Ybファイバーアンプ シミュレータ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: instrument console. Controls in a fixed left rack, results on a bench to the right:
+   amplifier schematic (fiber colored by inversion) -> readouts -> profiles -> sweep. */
+:root {
+  --bg: #EEF1F4;
+  --panel: #FFFFFF;
+  --ink: #15202C;
+  --muted: #5B6A7A;
+  --line: #D6DDE5;
+  --grid: #E6EBF0;
+  --accent: #2A55C8;
+  --accent-ink: #FFFFFF;
+  --sig: #C42F3B;
+  --pump: #0A857F;
+  --asef: #B27A08;
+  --aseb: #7244C0;
+  --heat: #B3531A;
+  --inv: #2A55C8;
+  --ok: #1D7F47;
+  --warn: #A86A0B;
+  --bad: #BD3326;
+  --inv-lo: #DCE3EB;
+  --inv-hi: #C42F3B;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+    --accent: #7FA0FF; --accent-ink: #0D1116;
+    --sig: #FF6C74; --pump: #3CCAC0; --asef: #EDB441; --aseb: #AA8CFF; --heat: #F08B4C; --inv: #7FA0FF;
+    --ok: #4CC883; --warn: #E8AE4A; --bad: #FF7A6B; --inv-lo: #222C37; --inv-hi: #FF6C74;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1116; --panel: #151B23; --ink: #E3E9F0; --muted: #93A2B3; --line: #26303B; --grid: #1D252E;
+  --accent: #7FA0FF; --accent-ink: #0D1116;
+  --sig: #FF6C74; --pump: #3CCAC0; --asef: #EDB441; --aseb: #AA8CFF; --heat: #F08B4C; --inv: #7FA0FF;
+  --ok: #4CC883; --warn: #E8AE4A; --bad: #FF7A6B; --inv-lo: #222C37; --inv-hi: #FF6C74;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1440px; margin: 0 auto; display: grid; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+header.top h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: 0.01em; text-wrap: balance; }
+header.top h1 small { font-family: var(--font-mono); font-weight: 500; font-size: 0.8rem; color: var(--muted); margin-left: 8px; letter-spacing: 0.04em; }
+header.top p { margin: 2px 0 0; color: var(--muted); max-width: 62ch; }
+.hdr-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.hdr-ctl label { font-size: 0.78rem; color: var(--muted); letter-spacing: 0.04em; }
+
+select, input[type="number"] {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 5px 8px; min-width: 0;
+}
+input[type="number"] { font-family: var(--font-mono); font-size: 0.86rem; text-align: right; width: 100%; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; border-radius: 4px; padding: 6px 12px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+}
+button.ghost { background: transparent; color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.app { display: grid; grid-template-columns: minmax(270px, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 920px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+/* control rack */
+aside.rack {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow: auto;
+}
+@media (max-width: 920px) { aside.rack { position: static; max-height: none; } }
+.grp { padding: 12px 14px 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.grp:first-child { border-top: 0; }
+.grp h2 { margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.grp h2 .sw { width: 10px; height: 3px; border-radius: 2px; }
+.prm { display: grid; grid-template-columns: minmax(0, 1fr) 128px; align-items: center; gap: 2px 10px; }
+.prm > label { font-size: 0.86rem; }
+.prm .num { display: flex; align-items: center; gap: 6px; }
+.prm .num .u { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); min-width: 38px; white-space: nowrap; }
+.prm input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.prm select { width: 100%; }
+.hint { margin: -2px 0 0; font-size: 0.74rem; line-height: 1.5; color: var(--muted); }
+details.adv summary { cursor: pointer; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); }
+details.adv[open] summary { margin-bottom: 10px; }
+details.adv .inner { display: grid; gap: 10px; }
+.derived { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 0.8rem; }
+.derived dt { color: var(--muted); }
+.derived dd { margin: 0; font-family: var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* bench */
+main.bench { display: grid; gap: 18px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+.card-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
+.card-h h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+.card-h .sub { font-size: 0.76rem; color: var(--muted); }
+
+.schem { position: relative; }
+.schem canvas { width: 100%; height: 170px; display: block; }
+.status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 0.75rem; font-weight: 500; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; display: inline-flex; align-items: center; gap: 6px; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); } .chip.info { color: var(--muted); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.kpi { background: var(--panel); padding: 11px 14px 12px; display: grid; gap: 2px; align-content: start; }
+.kpi .k { font-size: 0.74rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.kpi .k i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.kpi .v { font-family: var(--font-mono); font-size: 1.45rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.kpi .v span { font-size: 0.8rem; color: var(--muted); margin-left: 3px; }
+.kpi .s { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.charts .wide { grid-column: 1 / -1; }
+@media (max-width: 1100px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { position: relative; }
+.chart canvas { width: 100%; height: 240px; display: block; touch-action: pan-y; }
+.chart.tall canvas { height: 280px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.76rem; color: var(--muted); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.legend i.dash { border-top-style: dashed; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 8px; font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.45; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.12); z-index: 2; font-variant-numeric: tabular-nums;
+}
+.tip b { font-weight: 500; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 3px 10px; font-size: 0.75rem; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.sweep-ctl { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-bottom: 10px; }
+.sweep-ctl .f { display: grid; gap: 3px; font-size: 0.74rem; color: var(--muted); }
+.sweep-ctl .f input { width: 110px; }
+.prog { height: 3px; background: var(--grid); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.prog div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 500; font-family: var(--font-body); }
+.empty { color: var(--muted); font-size: 0.85rem; padding: 18px 4px; }
+
+.notes { font-size: 0.84rem; color: var(--muted); }
+.notes h3 { color: var(--ink); }
+.notes ul { margin: 6px 0 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 95ch; }
+.notes code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 4px; font-size: 0.82rem; z-index: 20; }
+.detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 24px; margin: 0; }
+.detail div { display: grid; gap: 1px; padding: 7px 0 8px; border-bottom: 1px solid var(--grid); min-width: 0; align-content: start; }
+.detail dt { font-size: 0.76rem; color: var(--muted); }
+.detail dd { margin: 0; font-family: var(--font-mono); font-size: 0.98rem; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.detail dd small { color: var(--muted); font-size: 0.72rem; }
+.xs-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .xs-grid { grid-template-columns: minmax(0, 1fr); } }
+.imp { display: grid; gap: 8px; font-size: 0.8rem; }
+.imp p { margin: 0; color: var(--muted); }
+.imp textarea { width: 100%; min-height: 92px; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; resize: vertical; }
+.imp .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.imp label.lbl { font-size: 0.74rem; color: var(--muted); }
+.imp input[type="file"] { font-size: 0.74rem; color: var(--muted); max-width: 100%; }
+.imp .msg { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); white-space: pre-wrap; }
+.imp .msg.err { color: var(--bad); }
+.sweep-ctl .f select { max-width: 200px; }
+.axis-set { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; padding: 8px 10px; border: 1px solid var(--grid); border-radius: 4px; }
+.axis-set > b { font-size: 0.74rem; color: var(--muted); font-weight: 600; align-self: center; min-width: 1.5em; }
+.axis-set .f input { width: 92px; }
+.map-wrap { position: relative; }
+.map-wrap canvas { width: 100%; height: 380px; display: block; touch-action: pan-y; }
+.note { font-size: 0.74rem; color: var(--muted); margin: 6px 0 0; }
+@media (prefers-reduced-motion: reduce) { .prog div { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Ybファイバーアンプ シミュレータ<small>Yb³⁺ · 2準位レート方程式 + ASE</small></h1>
+      <p>ファイバー・励起・信号の条件を変えると、信号/励起/ASEの伝搬、反転分布、熱負荷、出力スペクトルを定常状態で計算し直します。</p>
+    </div>
+    <div class="hdr-ctl">
+      <label for="preset">プリセット</label>
+      <select id="preset"></select>
+      <button class="ghost" id="reset" type="button">初期値に戻す</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="rack" id="rack" aria-label="パラメータ"></aside>
+
+    <main class="bench">
+      <section class="card schem">
+        <div class="card-h">
+          <h3>増幅器の構成と反転分布</h3>
+          <span class="sub" id="schem-sub"></span>
+        </div>
+        <canvas id="schem" aria-label="増幅器の模式図。ファイバーは反転分布の大きさで色分け"></canvas>
+        <div class="status" id="status"></div>
+      </section>
+
+      <section class="kpis" id="kpis" aria-label="主要な出力値"></section>
+
+      <section class="card">
+        <div class="card-h"><h3>詳細な出力値</h3><span class="sub">しきい値は目安です</span></div>
+        <dl class="detail" id="detail"></dl>
+      </section>
+
+      <section class="charts">
+        <div class="card chart tall wide" id="c-power">
+          <div class="card-h">
+            <h3>ファイバー内のパワー分布</h3>
+            <div class="tools">
+              <div class="seg" role="group" aria-label="縦軸の単位">
+                <button type="button" id="u-w" aria-pressed="true">W</button>
+                <button type="button" id="u-dbm" aria-pressed="false">dBm</button>
+              </div>
+              <button class="ghost" type="button" id="copy-z">分布をCSVでコピー</button>
+            </div>
+          </div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-inv">
+          <div class="card-h"><h3>反転分布 N₂/N</h3><span class="sub">破線は信号波長の透明点</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-heat">
+          <div class="card-h"><h3>熱負荷</h3><span class="sub">量子欠損 + 背景損失</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-spec">
+          <div class="card-h"><h3>出力スペクトル</h3><span class="sub" id="spec-sub">ASE は dBm/nm、信号は全パワー</span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card chart" id="c-gain">
+          <div class="card-h"><h3>利得スペクトル</h3><span class="sub" id="gain-sub"></span></div>
+          <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card wide">
+          <div class="card-h"><h3>Yb 吸収・誘導放出断面積</h3><span class="sub" id="xs-sub"></span></div>
+          <div class="xs-grid">
+            <div class="chart" id="c-xs"><canvas></canvas><div class="legend"></div></div>
+            <div class="imp">
+              <p>メーカーや文献の実測データがあれば読み込めます。各行に「波長, 断面積」を書きます。1 つの表に「波長, 吸収, 放出」の 3 列で書いても読めます。単位は自動で判定します（nm/µm、m²/cm²/10⁻²⁴ m²）。</p>
+              <label class="lbl" for="imp-a">吸収断面積（3 列ならこちらだけ）</label>
+              <textarea id="imp-a" spellcheck="false" placeholder="900, 0.45e-24&#10;915, 0.80e-24&#10;..."></textarea>
+              <input type="file" id="imp-fa" accept=".csv,.txt,.dat,.tsv" aria-label="吸収断面積のファイル">
+              <label class="lbl" for="imp-e">放出断面積</label>
+              <textarea id="imp-e" spellcheck="false" placeholder="1000, 0.25e-24&#10;1030, 0.65e-24&#10;..."></textarea>
+              <input type="file" id="imp-fe" accept=".csv,.txt,.dat,.tsv" aria-label="放出断面積のファイル">
+              <div class="row"><button type="button" id="imp-go">読み込んで使う</button><button type="button" class="ghost" id="imp-ex">今の断面積を入れる</button></div>
+              <div class="msg" id="imp-msg"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-h">
+          <h3>パラメータ掃引</h3>
+          <span class="sub" id="sw-sub">1 つの条件を動かして出力の変化を調べます</span>
+        </div>
+        <div class="sweep-ctl">
+          <div class="f"><label for="sw-var">掃引する量</label><select id="sw-var"></select></div>
+          <div class="f"><label for="sw-from">開始 <span id="sw-u1"></span></label><input id="sw-from" type="number" step="any"></div>
+          <div class="f"><label for="sw-to">終了 <span id="sw-u2"></span></label><input id="sw-to" type="number" step="any"></div>
+          <div class="f"><label for="sw-n">点数 (3〜201)</label><input id="sw-n" type="number" min="3" max="201" step="1" value="41"></div>
+          <div class="f"><label for="sw-y">グラフの縦軸</label><select id="sw-y"></select></div>
+          <button type="button" id="sw-run">掃引を実行</button>
+          <button type="button" class="ghost" id="sw-copy" disabled>表をCSVでコピー</button>
+        </div>
+        <div class="prog"><div id="sw-prog"></div></div>
+        <div class="chart" id="c-sweep"><canvas></canvas><div class="legend"></div></div>
+        <div class="tbl-wrap" id="sw-tbl"><div class="empty">「掃引を実行」を押すと、ここに各点の結果が並びます。</div></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h">
+          <h3>2 次元マップ</h3>
+          <span class="sub" id="map-sub">2 つの条件を同時に動かし、指標の分布を色で表示します</span>
+        </div>
+        <div class="sweep-ctl">
+          <div class="axis-set"><b>横</b>
+            <div class="f"><label for="mx-var">量</label><select id="mx-var"></select></div>
+            <div class="f"><label for="mx-from">開始 <span id="mx-u1"></span></label><input id="mx-from" type="number" step="any"></div>
+            <div class="f"><label for="mx-to">終了 <span id="mx-u2"></span></label><input id="mx-to" type="number" step="any"></div>
+            <div class="f"><label for="mx-n">点数</label><input id="mx-n" type="number" min="3" max="61" step="1" value="21"></div>
+          </div>
+          <div class="axis-set"><b>縦</b>
+            <div class="f"><label for="my-var">量</label><select id="my-var"></select></div>
+            <div class="f"><label for="my-from">開始 <span id="my-u1"></span></label><input id="my-from" type="number" step="any"></div>
+            <div class="f"><label for="my-to">終了 <span id="my-u2"></span></label><input id="my-to" type="number" step="any"></div>
+            <div class="f"><label for="my-n">点数</label><input id="my-n" type="number" min="3" max="61" step="1" value="21"></div>
+          </div>
+          <div class="f"><label for="map-m">色で表す指標</label><select id="map-m"></select></div>
+          <button type="button" id="map-run">マップを計算</button>
+          <button type="button" class="ghost" id="map-copy" disabled>CSVでコピー</button>
+        </div>
+        <div class="prog"><div id="map-prog"></div></div>
+        <div class="map-wrap" id="map-wrap"><canvas id="map-cv" aria-label="2 次元マップ"></canvas></div>
+        <p class="note">計算を速くするため、マップは z 分割 100・ASE 分解能 4 nm で計算します（通常の計算との差は 0.1 % 程度）。○ は現在の条件、◆ は指標が最良の点です。指標を切り替えても再計算は不要です。</p>
+      </section>
+
+      <section class="card notes">
+        <h3>計算モデル</h3>
+        <ul>
+          <li>Yb³⁺ を2準位系として扱い、定常レート方程式と伝搬方程式を z 方向に解きます。前方・後方の伝搬を交互に積分し、端面出力の相対変化が 10⁻⁶ 未満になるまで繰り返します（Heun 法・指数積分）。</li>
+          <li>ASE は指定した波長範囲を等間隔のチャネルに分け、前方・後方それぞれに自然放出項 <code>2hνΔν·Γσₑ N₂</code> を入れています。</li>
+          <li>信号とコア励起のオーバーラップ Γ は基本モードのガウス近似（Marcuse の式）から、クラッド励起は面積比 (a<sub>core</sub>/a<sub>clad</sub>)² から求めています。マルチモードコアでも基本モードとして扱います。</li>
+          <li>内蔵の断面積は 3 種類のガラス組成（アルミノシリケート、ゲルマノシリケート、リン酸シリケート）の代表的なスペクトル形状をガウス関数の和で再現した近似で、測定値そのものではありません。0.25 nm 間隔の表にして線形補間しています。実測データを読み込むと、それを同じ表に変換して使います。</li>
+          <li>ファイバー品種の一覧は、代表的な形状とスペックの目安です。実際の品番を使うときは、スペックシートのコア径・NA・吸収値で上書きしてください。</li>
+          <li>SRS しきい値は 16·A<sub>eff</sub>/(g<sub>R</sub>·L<sub>eff</sub>)（g<sub>R</sub> = 1×10⁻¹³ m/W）、SBS しきい値は 21·A<sub>eff</sub>/(g<sub>B</sub>·L<sub>eff</sub>)（g<sub>B</sub> = 5×10⁻¹¹ m/W、狭線幅信号の場合）で見積もっています。L<sub>eff</sub> は信号パワー分布を出力パワーで割って積分した実効長です。</li>
+          <li>取り出し可能エネルギーは E<sub>sat</sub>·ln G（E<sub>sat</sub> = hν·A/(Γ(σₐ+σₑ))、G は現在の信号利得）で、パルス増幅の目安です。</li>
+          <li>ドープ量はスペックシートの小信号吸収 (dB/m) で指定できます。クラッド吸収は α = 4.34·(a<sub>core</sub>/a<sub>clad</sub>)²·σₐ(λ)·N、コア吸収は α = 4.34·Γ(λ)·σₐ(λ)·N として Yb 濃度 N に換算します。976 nm の吸収ピークは鋭いため、基準波長はスペックシートと同じものを選んでください。</li>
+          <li>熱負荷は平均蛍光波長 1005 nm を基準にした量子欠損と背景損失から見積もっています。</li>
+          <li>考慮していないもの: 非線形効果の伝搬（SRS・SBS はしきい値の目安のみ）、SPM、フォトダークニング、温度依存性、パルス動作、端面反射による寄生発振。</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script id="solver">
+/* ===== Yb fiber amplifier model (steady-state, two-level, ASE) ===== */
+const H = 6.62607015e-34, C0 = 2.99792458e8;
+
+/* Yb cross-section tables on a 0.25 nm grid (850-1200 nm), linear interpolation, zero outside.
+   Built-in sets are sums of Gaussians shaped after typical published spectra for each glass host;
+   measured data can replace them via xsFromPoints(). Units: m^2. */
+const XS_L0 = 850, XS_DL = 0.25, XS_N = 1401;
+const XS_SETS = {
+  al: { name: 'アルミノシリケート',
+    abs: [[975.5, 2.45, 3.4], [912, 0.70, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]],
+    emi: [[975.5, 2.45, 3.4], [997, 0.22, 14], [1028, 0.60, 18], [1065, 0.25, 40], [955, 0.07, 18]] },
+  ge: { name: 'ゲルマノシリケート',
+    abs: [[975, 2.6, 2.9], [914, 0.62, 16], [947, 0.33, 22], [1004, 0.10, 20], [1040, 0.015, 35]],
+    emi: [[975, 2.6, 2.9], [996, 0.18, 12], [1027, 0.55, 15], [1062, 0.20, 36], [955, 0.06, 16]] },
+  p: { name: 'リン酸シリケート',
+    abs: [[975.5, 1.35, 4.6], [916, 0.50, 20], [945, 0.30, 25], [1000, 0.12, 25], [1040, 0.025, 40]],
+    emi: [[975.5, 1.35, 4.6], [1000, 0.25, 16], [1025, 0.45, 22], [1060, 0.25, 42], [955, 0.05, 18]] },
+};
+function gsum(terms, l) {
+  let s = 0;
+  for (const [c, a, w] of terms) { const u = (l - c) / w; s += a * Math.exp(-u * u); }
+  return s * 1e-24;
+}
+function xsFromTerms(abs, emi) {
+  const a = new Float64Array(XS_N), e = new Float64Array(XS_N);
+  for (let i = 0; i < XS_N; i++) { const l = XS_L0 + i * XS_DL; a[i] = gsum(abs, l); e[i] = gsum(emi, l); }
+  return { a, e };
+}
+// pts: [[lambda_nm, sigma_m2], ...] sorted by wavelength
+function resample(pts) {
+  const out = new Float64Array(XS_N);
+  if (!pts || pts.length < 2) return out;
+  let j = 0;
+  for (let i = 0; i < XS_N; i++) {
+    const l = XS_L0 + i * XS_DL;
+    if (l < pts[0][0] || l > pts[pts.length - 1][0]) continue;
+    while (j < pts.length - 2 && pts[j + 1][0] < l) j++;
+    const [l0, s0] = pts[j], [l1, s1] = pts[j + 1];
+    out[i] = Math.max(0, l1 === l0 ? s0 : s0 + (s1 - s0) * (l - l0) / (l1 - l0));
+  }
+  return out;
+}
+const xsFromPoints = (absPts, emiPts) => ({ a: resample(absPts), e: resample(emiPts) });
+let XS = xsFromTerms(XS_SETS.al.abs, XS_SETS.al.emi);
+const setXS = (t) => { if (t && t.a && t.e) XS = t; };
+function interpXS(arr, l) {
+  const x = (l - XS_L0) / XS_DL;
+  if (!(x >= 0 && x <= XS_N - 1)) return 0;
+  const i = Math.floor(x), f = x - i;
+  return i >= XS_N - 1 ? arr[i] : arr[i] * (1 - f) + arr[i + 1] * f;
+}
+const sigA = l => interpXS(XS.a, l);
+const sigE = l => interpXS(XS.e, l);
+
+/* Fundamental-mode overlap with a uniformly doped core (Marcuse Gaussian approximation) */
+function modeInfo(coreDiam_um, NA, lambda_nm) {
+  const a = coreDiam_um * 1e-6 / 2, lam = lambda_nm * 1e-9;
+  const V = 2 * Math.PI * a * NA / lam;
+  const wa = 0.65 + 1.619 / Math.pow(V, 1.5) + 2.879 / Math.pow(V, 6);
+  const w = wa * a;
+  return { V, w, mfd: 2 * w, gamma: 1 - Math.exp(-2 * a * a / (w * w)) };
+}
+
+function simulate(p) {
+  if (p.xs) setXS(p.xs);
+  const L = p.L, M = p.nz;
+  const dz = L / M;
+  const a = p.coreD * 1e-6 / 2;
+  const Acore = Math.PI * a * a;
+  const Aclad = Math.PI * Math.pow(p.cladD * 1e-6 / 2, 2);
+  const N = p.N * 1e25;
+  const tau = p.tau * 1e-3;
+  const alphaBg = p.lossDBkm / 1000 / 4.343; // 1/m
+
+  const gs = modeInfo(p.coreD, p.NA, p.ls).gamma;
+  const gp = p.pumpMode === 'core' ? modeInfo(p.coreD, p.NA, p.lp).gamma : Math.min(1, Acore / Aclad);
+
+  // channel list
+  const ch = [];
+  const add = (o) => {
+    const nu = C0 / (o.lam * 1e-9);
+    o.nu = nu;
+    o.sa = sigA(o.lam); o.se = sigE(o.lam);
+    o.hnuA = H * nu * Acore;
+    ch.push(o);
+  };
+  add({ kind: 'sig', dir: 1, lam: p.ls, G: gs, Pin: p.PsIn_mW * 1e-3, spont: 0 });
+  add({ kind: 'pf', dir: 1, lam: p.lp, G: gp, Pin: p.Ppf, spont: 0 });
+  add({ kind: 'pb', dir: -1, lam: p.lp, G: gp, Pin: p.Ppb, spont: 0 });
+  const aseL = [];
+  for (let l = p.aseMin; l <= p.aseMax + 1e-9; l += p.aseRes) aseL.push(+l.toFixed(4));
+  for (const l of aseL) {
+    const g = modeInfo(p.coreD, p.NA, l).gamma;
+    const dnu = C0 * (p.aseRes * 1e-9) / Math.pow(l * 1e-9, 2);
+    for (const d of [1, -1]) add({ kind: d > 0 ? 'af' : 'ab', dir: d, lam: l, G: g, Pin: 0, spont: 2 * H * (C0 / (l * 1e-9)) * dnu });
+  }
+  const K = ch.length;
+  for (const c of ch) {
+    c.P = new Float64Array(M + 1);
+    c.wa = c.G * c.sa / c.hnuA; // absorption rate per W
+    c.we = c.G * c.se / c.hnuA;
+    c.ga = c.G * c.sa * N;      // 1/m at full ground state
+    c.gt = c.G * (c.sa + c.se) * N;
+    if (c.dir > 0) c.P[0] = c.Pin; else c.P[M] = c.Pin;
+  }
+  const fwd = ch.filter(c => c.dir > 0), bwd = ch.filter(c => c.dir < 0);
+  const n2 = new Float64Array(M + 1);
+  const tmp = new Float64Array(K);
+  const g0 = new Float64Array(K), s0 = new Float64Array(K);
+
+  // inversion at node i, with powers from arrays except overrides in 'over' (for a direction set)
+  const inv = (i, set, vals) => {
+    let up = 0, tot = 0;
+    for (let k = 0; k < K; k++) {
+      const c = ch[k];
+      const P = c.P[i];
+      up += c.wa * P; tot += (c.wa + c.we) * P;
+    }
+    if (set) {
+      for (let j = 0; j < set.length; j++) {
+        const c = set[j], d = vals[j] - c.P[i];
+        up += c.wa * d; tot += (c.wa + c.we) * d;
+      }
+    }
+    return up / (tot + 1 / tau);
+  };
+  const step = (P, g, s, h) => {
+    const x = g * h;
+    const e = Math.exp(x);
+    const f = Math.abs(x) < 1e-8 ? h : Math.expm1(x) / g;
+    return P * e + s * f;
+  };
+
+  const pass = (set, dir) => {
+    const n = set.length;
+    const start = dir > 0 ? 0 : M, end = dir > 0 ? M : 0;
+    const pred = new Float64Array(n);
+    for (let i = start; i !== end; i += dir) {
+      const j = i + dir;
+      const x0 = inv(i, null, null);
+      n2[i] = x0;
+      for (let k = 0; k < n; k++) {
+        const c = set[k];
+        g0[k] = c.gt * x0 - c.ga - alphaBg;
+        s0[k] = c.spont * c.G * c.se * N * x0;
+        pred[k] = step(c.P[i], g0[k], s0[k], dz);
+      }
+      // corrector: inversion at next node with predicted values
+      const x1 = inv(j, set, pred);
+      for (let k = 0; k < n; k++) {
+        const c = set[k];
+        const g1 = c.gt * x1 - c.ga - alphaBg;
+        const s1 = c.spont * c.G * c.se * N * x1;
+        c.P[j] = step(c.P[i], 0.5 * (g0[k] + g1), 0.5 * (s0[k] + s1), dz);
+      }
+      n2[j] = x1;
+    }
+  };
+
+  const outs = () => ch.map(c => c.dir > 0 ? c.P[M] : c.P[0]);
+  let prev = outs(), it = 0, err = 1, converged = false;
+  const tolScale = 1e-9 + p.Ppf + p.Ppb + p.PsIn_mW * 1e-3;
+  for (it = 1; it <= p.maxIter; it++) {
+    pass(fwd, 1);
+    pass(bwd, -1);
+    const cur = outs();
+    err = 0;
+    for (let k = 0; k < K; k++) {
+      const d = Math.abs(cur[k] - prev[k]) / (Math.abs(cur[k]) + 1e-6 * tolScale);
+      if (d > err) err = d;
+    }
+    prev = cur;
+    if (err < p.tol) { converged = true; break; }
+  }
+  // final inversion consistent with all arrays
+  for (let i = 0; i <= M; i++) n2[i] = inv(i, null, null);
+
+  // heat load (W/m): quantum defect relative to mean fluorescence + background loss
+  const nuF = C0 / (p.lf * 1e-9);
+  const heat = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) {
+    let q = 0;
+    for (const c of ch) {
+      const P = c.P[i];
+      const net = (c.ga - c.gt * n2[i]) * P; // net absorbed power per length (W/m)
+      q += net * (1 - nuF / c.nu) + alphaBg * P;
+    }
+    heat[i] = q;
+  }
+
+  const z = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) z[i] = i * dz;
+  const sumDir = (kind, idx) => ch.filter(c => c.kind === kind).reduce((s, c) => s + c.P[idx], 0);
+  const aseF = new Float64Array(M + 1), aseB = new Float64Array(M + 1);
+  for (let i = 0; i <= M; i++) { aseF[i] = sumDir('af', i); aseB[i] = sumDir('ab', i); }
+  // net small-signal gain spectrum through the fiber for the converged inversion (dB)
+  const gainSpec = ch.filter(c => c.kind === 'af').map(c => {
+    let s = 0;
+    for (let i = 0; i <= M; i++) { const g = c.gt * n2[i] - c.ga - alphaBg; s += (i === 0 || i === M) ? 0.5 * g : g; }
+    return 10 / Math.LN10 * s * dz;
+  });
+  return {
+    gainSpec, sigHnuA: ch[0].hnuA, sigWa: ch[0].wa, sigWe: ch[0].we, pumpWa: ch[1].wa, pumpWe: ch[1].we, tau,
+    z, n2, heat, aseF, aseB, aseL, converged, iters: Math.min(it, p.maxIter), err,
+    sig: ch[0].P, pf: ch[1].P, pb: ch[2].P,
+    specF: ch.filter(c => c.kind === 'af').map(c => c.P[M]),
+    specB: ch.filter(c => c.kind === 'ab').map(c => c.P[0]),
+    gs, gp, Acore, Aclad, N,
+    out: {
+      sig: ch[0].P[M], sigIn: ch[0].Pin,
+      pumpRes: ch[1].P[M] + ch[2].P[0],
+      aseF: aseF[M], aseB: aseB[0],
+    }
+  };
+}
+
+
+/* scalar figures of merit for one run (all powers in W) */
+function summarize(r, p) {
+  const o = r.out, M = r.z.length - 1, dz = r.z[1] - r.z[0];
+  const launched = p.Ppf + p.Ppb;
+  let hmax = -Infinity, hz = 0, nsum = 0;
+  for (let i = 0; i <= M; i++) { if (r.heat[i] > hmax) { hmax = r.heat[i]; hz = r.z[i]; } nsum += r.n2[i]; }
+  // ASE density at the signal wavelength -> OSNR in 0.1 nm
+  let k = 0; for (let i = 1; i < r.aseL.length; i++) if (Math.abs(r.aseL[i] - p.ls) < Math.abs(r.aseL[k] - p.ls)) k = i;
+  const aseAtSig = r.specF[k] / p.aseRes * 0.1;
+  const mi = modeInfo(p.coreD, p.NA, p.ls);
+  const aeff = Math.PI * mi.w * mi.w;
+  let ps = 0; for (let i = 0; i <= M; i++) ps += (i === 0 || i === M ? 0.5 : 1) * r.sig[i];
+  const leff = o.sig > 0 ? ps * dz / o.sig : NaN;
+  const srsTh = 16 * aeff / (1e-13 * leff);
+  const sbsTh = 21 * aeff / (5e-11 * leff);
+  // saturation power at the fiber input (uses doped-core area and overlap through the rate coefficients)
+  const psatS = 1 / ((r.sigWa + r.sigWe) * r.tau);
+  const psatP = 1 / ((r.pumpWa + r.pumpWe) * r.tau);
+  const esatS = psatS * r.tau;
+  const hnuS = r.sigHnuA / r.Acore;
+  let n2int = 0; for (let i = 0; i <= M; i++) n2int += (i === 0 || i === M ? 0.5 : 1) * r.n2[i];
+  const eStored = n2int * dz * r.N * r.Acore * hnuS;
+  const gNep = Math.log(o.sig / o.sigIn);
+  return {
+    sig: o.sig, sigIn: o.sigIn, gainDB: 10 * Math.log10(o.sig / o.sigIn), pump: launched,
+    eff: launched > 0 ? (o.sig - o.sigIn) / launched * 100 : NaN,
+    pumpRes: o.pumpRes, aseF: o.aseF, aseB: o.aseB,
+    osnr: 10 * Math.log10(o.sig / Math.max(aseAtSig, 1e-18)),
+    heatMax: hmax, heatZ: hz, nAvg: nsum / (M + 1) * 100,
+    aeff, leff, srsTh, sbsTh, srsRatio: o.sig / srsTh * 100,
+    psatS, psatP, esatS, eStored, eExtract: gNep > 0 ? esatS * gNep : 0,
+    conv: r.converged,
+  };
+}
+
+/* worker entry: the same source runs on the page (for cross-sections) and inside blob Workers */
+if (typeof window === 'undefined' && typeof self !== 'undefined' && typeof importScripts === 'function') {
+  self.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'run') {
+      const r = simulate(m.params);
+      self.postMessage({ type: 'result', id: m.id, r, s: summarize(r, m.params) });
+    } else if (m.type === 'sum') {
+      const r = simulate(m.params);
+      self.postMessage({ type: 'sum', id: m.id, idx: m.idx, s: summarize(r, m.params) });
+    }
+  };
+}
+</script>
+<script>
+(() => {
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- parameters ---------- */
+const DEF = [
+  { g: 'ファイバー', sw: '--inv', items: [
+    { id: 'fiber', label: '品種', type: 'select', options: [] },
+    { id: 'fiberHint', type: 'hint' },
+    { id: 'L', label: 'ファイバー長', unit: 'm', min: 0.1, max: 30, step: 0.05 },
+    { id: 'coreD', label: 'コア径', unit: 'µm', min: 2, max: 50, step: 0.5 },
+    { id: 'NA', label: 'コア NA', unit: '', min: 0.03, max: 0.25, step: 0.001 },
+    { id: 'cladD', label: '内クラッド径', unit: 'µm', min: 60, max: 600, step: 1 },
+    { id: 'absMode', label: 'ドープ量の指定', type: 'select', options: [['clad', 'クラッド吸収'], ['core', 'コア吸収'], ['conc', 'Yb 濃度']] },
+    { id: 'absDB', label: 'クラッド吸収', unit: 'dB/m', min: 0.05, max: 3000, step: 0.01, scale: 'log', show: () => P.absMode !== 'conc' },
+    { id: 'absL', label: '吸収の基準波長', type: 'select', options: [['915', '915 nm'], ['920', '920 nm'], ['940', '940 nm'], ['976', '976 nm']], show: () => P.absMode !== 'conc' },
+    { id: 'N', label: 'Yb 濃度', unit: '10²⁵/m³', min: 0.5, max: 30, step: 0.1, show: () => P.absMode === 'conc' },
+    { id: 'absHint', type: 'hint' },
+    { id: 'comp', label: 'ガラス組成', type: 'select', options: [['al', 'アルミノシリケート'], ['ge', 'ゲルマノシリケート'], ['p', 'リン酸シリケート'], ['user', '読み込んだ実測データ']] },
+    { id: 'tau', label: '上準位寿命', unit: 'ms', min: 0.5, max: 1.5, step: 0.01 },
+    { id: 'lossDBkm', label: '背景損失', unit: 'dB/km', min: 0, max: 200, step: 1 },
+  ]},
+  { g: '励起', sw: '--pump', items: [
+    { id: 'pumpMode', label: '励起方式', type: 'select', options: [['clad', 'クラッド励起'], ['core', 'コア励起']] },
+    { id: 'lp', label: '励起波長', unit: 'nm', min: 900, max: 990, step: 0.5 },
+    { id: 'Ppf', label: '前方励起', unit: 'W', min: 0, max: 500, step: 0.01, scale: 'sq' },
+    { id: 'Ppb', label: '後方励起', unit: 'W', min: 0, max: 500, step: 0.01, scale: 'sq' },
+  ]},
+  { g: '信号', sw: '--sig', items: [
+    { id: 'ls', label: '信号波長', unit: 'nm', min: 1000, max: 1120, step: 0.5 },
+    { id: 'PsIn_mW', label: '入力パワー', unit: 'mW', min: 0.001, max: 20000, step: 0.001, scale: 'log' },
+  ]},
+];
+const ADV = [
+  { id: 'nz', label: 'z 分割数', unit: '', min: 50, max: 2000, step: 10 },
+  { id: 'aseRes', label: 'ASE 分解能', unit: 'nm', min: 0.5, max: 10, step: 0.5 },
+  { id: 'aseMin', label: 'ASE 下限', unit: 'nm', min: 950, max: 1050, step: 1 },
+  { id: 'aseMax', label: 'ASE 上限', unit: 'nm', min: 1060, max: 1200, step: 1 },
+];
+const ALL = DEF.flatMap(g => g.items).concat(ADV).filter(d => d.type !== 'hint');
+
+/* doping: spec-sheet small-signal absorption <-> Yb ion density */
+const DB_PER_NEPER = 10 / Math.LN10;
+const absGamma = (mode, lam) => mode === 'core' ? modeInfo(P.coreD, P.NA, lam).gamma : Math.min(1, Math.pow(P.coreD / P.cladD, 2));
+const absFromN = (mode, lam, N) => DB_PER_NEPER * absGamma(mode, lam) * sigA(lam) * N * 1e25;
+const effN = () => P.absMode === 'conc' ? P.N : P.absDB / absFromN(P.absMode, +P.absL, 1);
+const ABS_HINT = {
+  clad: 'スペックシートの「クラッド吸収」をそのまま入れてください。面積比 (コア径/クラッド径)² で Yb 濃度に換算します。',
+  core: 'スペックシートの「コア吸収」をそのまま入れてください。基本モードとドープ領域の重なり Γ を考慮して Yb 濃度に換算します。',
+  conc: 'コア内の Yb イオン数密度を直接指定します。',
+};
+/* typical fiber types (representative values, not a specific product) */
+const FIBERS = [
+  { g: 'コア励起 (シングルモード)', items: [
+    { id: 'sm4', name: '4/125 高濃度 NA 0.20', p: { coreD: 4, NA: 0.20, cladD: 125, absMode: 'core', absDB: 1200, absL: '976', comp: 'al' } },
+    { id: 'sm6', name: '6/125 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', comp: 'al' } },
+    { id: 'sm6p', name: '6/125 リン酸系 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 120, absL: '976', comp: 'p' } },
+  ]},
+  { g: 'ダブルクラッド', items: [
+    { id: 'dc6', name: '6/125 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'clad', absDB: 0.6, absL: '915', comp: 'al' } },
+    { id: 'lma10', name: '10/125 LMA NA 0.075', p: { coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al' } },
+    { id: 'lma10p', name: '10/125 リン酸系 NA 0.075', p: { coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 2.5, absL: '976', comp: 'p' } },
+    { id: 'lma15', name: '15/130 LMA NA 0.08', p: { coreD: 15, NA: 0.08, cladD: 130, absMode: 'clad', absDB: 3.0, absL: '915', comp: 'al' } },
+  ]},
+  { g: '高出力 LMA', items: [
+    { id: 'lma20', name: '20/400 NA 0.065', p: { coreD: 20, NA: 0.065, cladD: 400, absMode: 'clad', absDB: 0.4, absL: '915', comp: 'al' } },
+    { id: 'lma25', name: '25/250 NA 0.065', p: { coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', comp: 'al' } },
+    { id: 'lma25b', name: '25/400 NA 0.065', p: { coreD: 25, NA: 0.065, cladD: 400, absMode: 'clad', absDB: 0.9, absL: '915', comp: 'al' } },
+    { id: 'lma30', name: '30/250 NA 0.06', p: { coreD: 30, NA: 0.06, cladD: 250, absMode: 'clad', absDB: 2.8, absL: '915', comp: 'al' } },
+    { id: 'lma30b', name: '30/400 NA 0.06', p: { coreD: 30, NA: 0.06, cladD: 400, absMode: 'clad', absDB: 1.1, absL: '915', comp: 'al' } },
+  ]},
+  { g: 'ロッド・PCF', items: [
+    { id: 'rod40', name: '40/200 ロッド型 NA 0.03', p: { coreD: 40, NA: 0.03, cladD: 200, absMode: 'clad', absDB: 10, absL: '976', comp: 'al' } },
+  ]},
+];
+const FIBER_LIST = FIBERS.flatMap(g => g.items);
+const matchFiber = () => (FIBER_LIST.find(f => Object.keys(f.p).every(k => f.p[k] === P[k])) || { id: 'custom' }).id;
+DEF[0].items[0].html = `<optgroup label="—"><option value="custom">カスタム（手入力）</option></optgroup>` + FIBERS.map(g => `<optgroup label="${g.g}">${g.items.map(f => `<option value="${f.id}">${f.name}</option>`).join('')}</optgroup>`).join('');
+
+const FIXED = { maxIter: 400, tol: 1e-6, lf: 1005 };
+const NUMERICS = { nz: 200, aseRes: 2, aseMin: 970, aseMax: 1150 };
+
+const PRESETS = [
+  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
+  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
+  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
+  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
+];
+const PUMP_MAX = { clad: 500, core: 20 };
+
+let P = Object.assign({ N: 6.6 }, PRESETS[0].p, NUMERICS);
+const STORE_KEY = 'ybamp-params-v3';
+try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (s && typeof s === 'object') for (const k of Object.keys(P)) if (k in s) P[k] = s[k]; } catch (e) {}
+
+const decimals = (step) => { const s = String(step); return s.includes('.') ? s.split('.')[1].length : 0; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const toT = (d, v) => {
+  if (d.scale === 'sq') return Math.sqrt(clamp(v, 0, d.max) / d.max);
+  if (d.scale === 'log') return Math.log(clamp(v, d.min, d.max) / d.min) / Math.log(d.max / d.min);
+  return (clamp(v, d.min, d.max) - d.min) / (d.max - d.min);
+};
+const fromT = (d, t) => {
+  let v;
+  if (d.scale === 'sq') v = d.max * t * t;
+  else if (d.scale === 'log') v = d.min * Math.pow(d.max / d.min, t);
+  else v = d.min + t * (d.max - d.min);
+  if (d.scale === 'log') { const m = Math.pow(10, Math.floor(Math.log10(v)) - 2); return Math.round(v / m) * m; }
+  return +(Math.round(v / d.step) * d.step).toFixed(decimals(d.step));
+};
+const fmtIn = (d, v) => d.scale === 'log' ? String(+v.toPrecision(4)) : (+v).toFixed(decimals(d.step));
+
+function rowHTML(d) {
+  if (d.type === 'hint') return `<p class="hint" id="${d.id}"></p>`;
+  if (d.type === 'select') {
+    return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.html || d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+  }
+  return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}" id="lb-${d.id}">${d.label}</label><div class="num"><input id="p-${d.id}" type="number" step="any" min="${d.min}" max="${d.max}" inputmode="decimal"><span class="u">${d.unit}</span></div><input id="r-${d.id}" type="range" min="0" max="1000" step="1" aria-label="${d.label}"></div>`;
+}
+const rack = $('#rack');
+rack.innerHTML = DEF.map(g => `<div class="grp"><h2><span class="sw" style="background:var(${g.sw})"></span>${g.g}</h2>${g.items.map(rowHTML).join('')}</div>`).join('') +
+  `<div class="grp"><details class="adv"><summary>計算設定</summary><div class="inner">${ADV.map(rowHTML).join('')}</div></details></div>` +
+  `<div class="grp"><h2>ファイバーの諸元 (計算値)</h2><dl class="derived" id="derived"></dl></div>`;
+
+function syncInputs() {
+  for (const d of ALL) {
+    const el = $('#p-' + d.id);
+    if (d.id === 'fiber') { el.value = matchFiber(); continue; }
+    if (d.type === 'select') { el.value = P[d.id]; continue; }
+    el.value = fmtIn(d, P[d.id]);
+    $('#r-' + d.id).value = Math.round(toT(d, P[d.id]) * 1000);
+  }
+  for (const d of ALL) if (d.show) $('#row-' + d.id).hidden = !d.show();
+  $('#lb-absDB').textContent = P.absMode === 'core' ? 'コア吸収' : 'クラッド吸収';
+  $('#absHint').textContent = ABS_HINT[P.absMode] || '';
+  $('#fiberHint').textContent = matchFiber() === 'custom' ? '一覧の品種を選ぶと、形状と吸収スペックがまとめて入ります。' : '代表的な値です。実際の品番はスペックシートの値で上書きしてください。';
+}
+function applyPumpRange() {
+  const mx = PUMP_MAX[P.pumpMode] || 500;
+  for (const id of ['Ppf', 'Ppb']) { const d = ALL.find(x => x.id === id); d.max = mx; $('#p-' + id).max = mx; }
+}
+function onParam(id, v, src) {
+  const d = ALL.find(x => x.id === id);
+  if (id === 'fiber') {
+    const f = FIBER_LIST.find(x => x.id === v);
+    if (f) { Object.assign(P, f.p); applyXS(); P.N = P.absMode === 'conc' ? P.N : effN(); }
+    syncInputs(); $('#preset').value = matchPreset(); persist(); updateDerived(); drawXS(); schedule();
+    return;
+  }
+  if (id === 'comp' && v === 'user' && !USER_XS) {
+    toast('先に断面積カードで実測データを読み込んでください'); syncInputs(); return;
+  }
+  if (d.type !== 'select') {
+    if (!isFinite(v)) return;
+    v = clamp(v, d.min, d.max);
+  }
+  if (id === 'absMode' || id === 'absL') {
+    // keep the same doping when only the way of specifying it changes
+    const n0 = effN();
+    P[id] = v;
+    if (P.absMode === 'conc') P.N = +clamp(n0, 0.5, 30).toFixed(1);
+    else P.absDB = +absFromN(P.absMode, +P.absL, n0).toPrecision(3);
+  } else P[id] = v;
+  if (id === 'comp') applyXS();
+  if (P.absMode !== 'conc') P.N = effN();
+  if (id === 'pumpMode') { applyPumpRange(); }
+  if (id === 'aseMin' || id === 'aseMax') { if (P.aseMax - P.aseMin < 10) P.aseMax = P.aseMin + 10; }
+  if (src !== 'num' || d.type === 'select') syncInputs();
+  else { $('#r-' + id).value = Math.round(toT(d, v) * 1000); $('#p-fiber').value = matchFiber(); $('#fiberHint').textContent = matchFiber() === 'custom' ? '一覧の品種を選ぶと、形状と吸収スペックがまとめて入ります。' : '代表的な値です。実際の品番はスペックシートの値で上書きしてください。'; }
+  $('#preset').value = matchPreset();
+  persist();
+  updateDerived();
+  schedule();
+  if (id === 'pumpMode' || id === 'lp' || id === 'ls' || id === 'comp') drawXS();
+}
+for (const d of ALL) {
+  const el = $('#p-' + d.id);
+  if (d.type === 'select') { el.addEventListener('change', () => onParam(d.id, el.value, 'sel')); continue; }
+  el.addEventListener('change', () => onParam(d.id, parseFloat(el.value), 'num'));
+  el.addEventListener('input', () => { const v = parseFloat(el.value); if (isFinite(v) && v >= d.min && v <= d.max) onParam(d.id, v, 'num'); });
+  const r = $('#r-' + d.id);
+  r.addEventListener('input', () => onParam(d.id, fromT(d, r.value / 1000), 'range'));
+}
+const persist = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(P)); } catch (e) {} };
+
+const presetSel = $('#preset');
+presetSel.innerHTML = PRESETS.map(p => `<option value="${p.id}">${p.name}</option>`).join('') + '<option value="custom">カスタム</option>';
+function matchPreset() {
+  for (const pr of PRESETS) if (Object.keys(pr.p).every(k => pr.p[k] === P[k])) return pr.id;
+  return 'custom';
+}
+function loadPreset(id) {
+  const pr = PRESETS.find(p => p.id === id); if (!pr) return;
+  Object.assign(P, pr.p);
+  applyXS();
+  if (P.absMode !== 'conc') P.N = effN();
+  applyPumpRange(); syncInputs(); presetSel.value = id; persist(); updateDerived(); drawXS(); schedule(); resetSweepRange(); resetMapRange();
+}
+presetSel.addEventListener('change', () => { if (presetSel.value !== 'custom') loadPreset(presetSel.value); });
+$('#reset').addEventListener('click', () => { Object.assign(P, NUMERICS); loadPreset(PRESETS[0].id); });
+
+/* ---------- cross-section tables ---------- */
+const BUILTIN_XS = {};
+for (const k of Object.keys(XS_SETS)) BUILTIN_XS[k] = xsFromTerms(XS_SETS[k].abs, XS_SETS[k].emi);
+let USER_XS = null, USER_XS_INFO = '';
+const USER_KEY = 'ybamp-userxs-v1';
+const currentXS = () => (P.comp === 'user' && USER_XS) ? USER_XS : (BUILTIN_XS[P.comp] || BUILTIN_XS.al);
+function applyXS() { if (P.comp === 'user' && !USER_XS) P.comp = 'al'; setXS(currentXS()); }
+
+function parseTable(txt) {
+  const rows = [];
+  for (const line of String(txt).split(/\r?\n/)) {
+    const t = line.trim(); if (!t || /^[#%;/]/.test(t)) continue;
+    const cols = t.split(/[\s,;\t]+/).map(Number);
+    if (cols.length >= 2 && cols.every(isFinite)) rows.push(cols);
+  }
+  return rows;
+}
+function normWl(rows) {
+  const mx = Math.max(...rows.map(r => r[0]));
+  const f = mx < 1e-4 ? 1e9 : mx < 10 ? 1000 : 1; // m, µm or nm
+  return { f, unit: f === 1e9 ? 'm' : f === 1000 ? 'µm' : 'nm' };
+}
+function normXs(vals) {
+  const mx = Math.max(...vals.map(Math.abs));
+  if (mx < 1e-21) return { f: 1, unit: 'm²' };
+  if (mx < 1e-15) return { f: 1e-4, unit: 'cm²' };
+  return { f: 1e-24, unit: '10⁻²⁴ m²' };
+}
+function buildPts(rows, col) {
+  const w = normWl(rows), x = normXs(rows.map(r => r[col]));
+  const pts = rows.map(r => [r[0] * w.f, r[col] * x.f]).sort((a, b) => a[0] - b[0]);
+  const out = []; for (const q of pts) if (!out.length || q[0] > out[out.length - 1][0]) out.push(q);
+  return { pts: out, wu: w.unit, xu: x.unit };
+}
+function importXS(aTxt, eTxt, quiet) {
+  const ra = parseTable(aTxt), re = parseTable(eTxt);
+  let A, E;
+  if (ra.length && ra[0].length >= 3 && !re.length) { A = buildPts(ra, 1); E = buildPts(ra, 2); }
+  else { if (ra.length) A = buildPts(ra, 1); if (re.length) E = buildPts(re, 1); }
+  if (!A || !E || A.pts.length < 5 || E.pts.length < 5) throw new Error('吸収と放出の両方に、数値の行が 5 行以上必要です。');
+  const span = (q) => `${q.pts[0][0].toFixed(0)}–${q.pts[q.pts.length - 1][0].toFixed(0)} nm`;
+  if (A.pts[0][0] > 980 || A.pts[A.pts.length - 1][0] < 970) throw new Error('吸収データが 976 nm を含んでいません（範囲 ' + span(A) + '）。');
+  const t = xsFromPoints(A.pts, E.pts);
+  USER_XS = t;
+  const prev = XS; setXS(t);
+  USER_XS_INFO = `吸収 ${A.pts.length} 点 (${span(A)}, ${A.xu})、放出 ${E.pts.length} 点 (${span(E)}, ${E.xu})\nσa(976) = ${(sigA(976) * 1e24).toFixed(2)}、σe(1030) = ${(sigE(1030) * 1e24).toFixed(2)} ×10⁻²⁴ m²`;
+  setXS(prev);
+  if (!quiet) { try { localStorage.setItem(USER_KEY, JSON.stringify({ a: aTxt, e: eTxt })); } catch (e2) {} }
+  return USER_XS_INFO;
+}
+try { const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null'); if (u) { importXS(u.a, u.e, true); } } catch (e) { USER_XS = null; }
+
+/* ---------- formatting ---------- */
+function fmtW(w) {
+  const a = Math.abs(w);
+  if (a === 0) return ['0', 'W'];
+  if (a >= 1) return [a >= 100 ? w.toFixed(1) : a >= 10 ? w.toFixed(2) : w.toFixed(3), 'W'];
+  if (a >= 1e-3) { const m = w * 1e3; return [Math.abs(m) >= 100 ? m.toFixed(1) : Math.abs(m) >= 10 ? m.toFixed(2) : m.toFixed(3), 'mW']; }
+  const u = w * 1e6; return [Math.abs(u) >= 100 ? u.toFixed(1) : Math.abs(u) >= 10 ? u.toFixed(2) : u.toFixed(3), 'µW'];
+}
+const fmtWs = (w) => fmtW(w).join(' ');
+const fmtJ = (j) => { const a = Math.abs(j); return a >= 1 ? j.toFixed(2) + ' J' : a >= 1e-3 ? (j * 1e3).toFixed(2) + ' mJ' : (j * 1e6).toFixed(1) + ' µJ'; };
+const dB = (x) => 10 * Math.log10(x);
+const dBm = (w) => 10 * Math.log10(Math.max(w, 1e-15) / 1e-3);
+
+/* ---------- derived fiber parameters ---------- */
+function updateDerived() {
+  const ms = modeInfo(P.coreD, P.NA, P.ls);
+  const mp = modeInfo(P.coreD, P.NA, P.lp);
+  const gp = P.pumpMode === 'core' ? mp.gamma : Math.min(1, Math.pow(P.coreD / P.cladD, 2));
+  const N = effN();
+  const absP = DB_PER_NEPER * gp * sigA(P.lp) * N * 1e25;
+  const absS = DB_PER_NEPER * ms.gamma * sigA(P.ls) * N * 1e25;
+  const rows = [
+    ['Yb 濃度', N.toFixed(2) + ' ×10²⁵ m⁻³'],
+    ['クラッド吸収 915 nm', absFromN('clad', 915, N).toFixed(2) + ' dB/m'],
+    ['クラッド吸収 976 nm', absFromN('clad', 976, N).toFixed(2) + ' dB/m'],
+    ['コア吸収 976 nm', absFromN('core', 976, N).toFixed(0) + ' dB/m'],
+    ['V 値 (信号)', ms.V.toFixed(2) + (ms.V > 2.405 ? ' MM' : ' SM')],
+    ['MFD (信号)', (ms.mfd * 1e6).toFixed(1) + ' µm'],
+    ['Γ 信号', ms.gamma.toFixed(3)],
+    ['Γ 励起', gp < 0.01 ? gp.toFixed(4) : gp.toFixed(3)],
+    ['励起の小信号吸収', absP.toFixed(2) + ' dB/m'],
+    ['同 全長', (absP * P.L).toFixed(1) + ' dB'],
+    ['信号の基底吸収', (absS * P.L).toFixed(2) + ' dB'],
+    ['量子欠損', ((1 - P.lp / P.ls) * 100).toFixed(1) + ' %'],
+  ];
+  $('#derived').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+/* ---------- chart ---------- */
+function niceStep(span, n) {
+  const raw = span / Math.max(1, n);
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+function ticks(min, max, n) {
+  const st = niceStep(max - min, n);
+  const out = [];
+  for (let v = Math.ceil(min / st - 1e-9) * st; v <= max + st * 1e-9; v += st) out.push(+v.toPrecision(12));
+  return { out, st };
+}
+const tickFmt = (v, st) => { const d = Math.max(0, -Math.floor(Math.log10(st) + 1e-9)); return v.toFixed(Math.min(d, 6)); };
+
+class Chart {
+  constructor(el) {
+    this.el = el; this.cv = el.querySelector('canvas'); this.lg = el.querySelector('.legend');
+    this.tip = document.createElement('div'); this.tip.className = 'tip'; this.tip.hidden = true; el.appendChild(this.tip);
+    this.hx = null; this.cfg = null;
+    const mv = (e) => { const r = this.cv.getBoundingClientRect(); this.hx = e.clientX - r.left; this.hy = e.clientY - r.top; this.draw(); };
+    this.cv.addEventListener('pointermove', mv);
+    this.cv.addEventListener('pointerdown', mv);
+    this.cv.addEventListener('pointerleave', () => { this.hx = null; this.tip.hidden = true; this.draw(); });
+    CHARTS.push(this);
+  }
+  set(cfg) {
+    this.cfg = cfg;
+    if (this.lg) {
+      const items = cfg.series.filter(s => s.label).map(s => `<span><i class="${s.dash ? 'dash' : ''}" style="border-color:var(${s.color})"></i>${s.label}</span>`);
+      (cfg.stems || []).forEach(s => items.push(`<span><i style="border-color:var(${s.color});width:3px;height:10px;border-top:0;border-left:2px solid var(${s.color})"></i>${s.legend || s.label}</span>`));
+      this.lg.innerHTML = items.join('');
+    }
+    this.draw();
+  }
+  draw() {
+    const cfg = this.cfg; if (!cfg) return;
+    const cv = this.cv, dpr = window.devicePixelRatio || 1;
+    const W = cv.clientWidth, Hh = cv.clientHeight;
+    if (!W || !Hh) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(Hh * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, Hh);
+    const C = { ink: cssVar('--ink'), muted: cssVar('--muted'), grid: cssVar('--grid'), line: cssVar('--line'), panel: cssVar('--panel') };
+    const mono = cssVar('--font-mono');
+    // ranges
+    let xmin = cfg.x.min, xmax = cfg.x.max, ymin = cfg.y.min, ymax = cfg.y.max;
+    if (xmin == null || xmax == null) {
+      let a = Infinity, b = -Infinity;
+      for (const s of cfg.series) for (const v of s.x) { if (v < a) a = v; if (v > b) b = v; }
+      if (xmin == null) xmin = a; if (xmax == null) xmax = b;
+    }
+    if (ymin == null || ymax == null) {
+      let a = Infinity, b = -Infinity;
+      for (const s of cfg.series) for (const v of s.y) if (isFinite(v)) { if (v < a) a = v; if (v > b) b = v; }
+      for (const s of (cfg.stems || [])) if (isFinite(s.y)) { a = Math.min(a, s.y); b = Math.max(b, s.y); }
+      for (const h of (cfg.hlines || [])) { a = Math.min(a, h.y); b = Math.max(b, h.y); }
+      if (!isFinite(a)) { a = 0; b = 1; }
+      if (a === b) { b = a + 1; }
+      const pad = (b - a) * 0.06;
+      if (ymin == null) ymin = cfg.y.zero && a >= 0 ? 0 : a - pad;
+      if (ymax == null) ymax = b + pad;
+    }
+    if (cfg.y.floor != null) ymin = Math.max(ymin, cfg.y.floor);
+    if (xmax === xmin) xmax = xmin + 1;
+    ctx.font = `11px ${mono}`;
+    const yt = ticks(ymin, ymax, Math.max(3, Math.round(Hh / 48)));
+    const ylw = Math.max(...yt.out.map(v => ctx.measureText(tickFmt(v, yt.st)).width));
+    const L = Math.max(40, ylw + 26), R = 12, T = 10, B = 36;
+    const pw = W - L - R, ph = Hh - T - B;
+    const X = (v) => L + (v - xmin) / (xmax - xmin) * pw;
+    const Y = (v) => T + (1 - (v - ymin) / (ymax - ymin)) * ph;
+    // grid
+    ctx.lineWidth = 1; ctx.strokeStyle = C.grid; ctx.fillStyle = C.muted; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    for (const v of yt.out) { const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(tickFmt(v, yt.st), L - 6, y); }
+    const xt = ticks(xmin, xmax, Math.max(3, Math.round(pw / 80)));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (const v of xt.out) { const x = Math.round(X(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); const tx = tickFmt(v, xt.st), tw = ctx.measureText(tx).width; ctx.fillText(tx, clamp(x, tw / 2 + 2, W - tw / 2 - 2), T + ph + 5); }
+    ctx.strokeStyle = C.line; ctx.strokeRect(L + 0.5, T + 0.5, pw, ph);
+    // axis labels
+    ctx.font = `11px ${cssVar('--font-body')}`; ctx.fillStyle = C.muted;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(cfg.x.label, L + pw / 2, Hh - 2);
+    ctx.save(); ctx.translate(11, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(cfg.y.label, 0, 0); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+    // ref lines
+    for (const h of (cfg.hlines || [])) {
+      ctx.strokeStyle = cssVar(h.color); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(L, Y(h.y)); ctx.lineTo(L + pw, Y(h.y)); ctx.stroke(); ctx.setLineDash([]);
+      if (h.label) { ctx.fillStyle = cssVar(h.color); ctx.font = `11px ${cssVar('--font-body')}`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(h.label, L + pw - 4, Y(h.y) - 3); }
+    }
+    for (const vl of (cfg.vlines || [])) {
+      if (vl.x < xmin || vl.x > xmax) continue;
+      ctx.strokeStyle = cssVar(vl.color); ctx.setLineDash([3, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X(vl.x), T); ctx.lineTo(X(vl.x), T + ph); ctx.stroke(); ctx.setLineDash([]);
+      if (vl.label) { ctx.fillStyle = cssVar(vl.color); ctx.font = `11px ${mono}`; ctx.textBaseline = 'top'; const right = X(vl.x) > L + pw - 70; ctx.textAlign = right ? 'right' : 'left'; ctx.fillText(vl.label, X(vl.x) + (right ? -4 : 4), T + 4); }
+    }
+    // series
+    for (const s of cfg.series) {
+      ctx.strokeStyle = cssVar(s.color); ctx.lineWidth = s.w || 1.8; ctx.setLineDash(s.dash ? [6, 4] : []); ctx.lineJoin = 'round';
+      if (s.fill) {
+        ctx.beginPath(); let started = false;
+        for (let i = 0; i < s.x.length; i++) { const y = s.y[i]; if (!isFinite(y)) continue; const px = X(s.x[i]), py = Y(Math.max(y, ymin)); if (!started) { ctx.moveTo(px, Y(ymin)); ctx.lineTo(px, py); started = true; } else ctx.lineTo(px, py); }
+        if (started) { ctx.lineTo(X(s.x[s.x.length - 1]), Y(ymin)); ctx.closePath(); ctx.globalAlpha = 0.12; ctx.fillStyle = cssVar(s.color); ctx.fill(); ctx.globalAlpha = 1; }
+      }
+      ctx.beginPath(); let pen = false;
+      for (let i = 0; i < s.x.length; i++) {
+        const y = s.y[i];
+        if (!isFinite(y)) { pen = false; continue; }
+        const px = X(s.x[i]), py = Y(Math.max(y, ymin - (ymax - ymin)));
+        if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      if (s.dots) { ctx.fillStyle = cssVar(s.color); for (let i = 0; i < s.x.length; i++) if (isFinite(s.y[i])) { ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), 2.4, 0, 7); ctx.fill(); } }
+    }
+    for (const st of (cfg.stems || [])) {
+      if (!isFinite(st.y)) continue;
+      const c = cssVar(st.color), px = X(st.x), py = Y(st.y);
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, T + ph); ctx.lineTo(px, py); ctx.stroke();
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(px, py, 3.5, 0, 7); ctx.fill();
+      if (st.label) { ctx.font = `11px ${mono}`; ctx.textBaseline = 'middle'; const right = px > L + pw - 110; ctx.textAlign = right ? 'right' : 'left'; ctx.fillText(st.label, px + (right ? -8 : 8), Math.max(T + 8, py)); }
+    }
+    for (const mk of (cfg.marks || [])) {
+      const c = cssVar(mk.color); ctx.strokeStyle = c; ctx.fillStyle = cssVar('--panel'); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(mk.x), Y(mk.y), 4.5, 0, 7); ctx.fill(); ctx.stroke();
+      if (mk.label) { ctx.fillStyle = c; ctx.font = `11px ${mono}`; ctx.textAlign = X(mk.x) > L + pw / 2 ? 'right' : 'left'; const below = Y(mk.y) - 20 < T; ctx.textBaseline = below ? 'top' : 'bottom'; ctx.fillText(mk.label, X(mk.x) + (ctx.textAlign === 'right' ? -8 : 8), Y(mk.y) + (below ? 8 : -6)); }
+    }
+    ctx.restore();
+    // hover
+    if (this.hx != null && this.hx >= L && this.hx <= L + pw && cfg.series.length) {
+      const xv = xmin + (this.hx - L) / pw * (xmax - xmin);
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(Math.round(this.hx) + 0.5, T); ctx.lineTo(Math.round(this.hx) + 0.5, T + ph); ctx.stroke(); ctx.setLineDash([]);
+      const lines = [`<b>${cfg.x.fmt ? cfg.x.fmt(xv) : xv.toFixed(2)}</b> ${cfg.x.unit || ''}`];
+      for (const s of cfg.series) {
+        if (!s.label || s.noTip) continue;
+        const i = nearest(s.x, xv); if (i < 0) continue;
+        const yv = s.tipY ? s.tipY[i] : s.y[i];
+        ctx.fillStyle = cssVar(s.color); ctx.beginPath(); ctx.arc(X(s.x[i]), Y(clamp(s.y[i], ymin, ymax)), 3, 0, 7); ctx.fill();
+        lines.push(`<span style="color:var(${s.color})">●</span> ${s.label}: <b>${(cfg.y.fmt || ((v) => v.toPrecision(3)))(yv)}</b>`);
+      }
+      this.tip.innerHTML = lines.join('<br>');
+      this.tip.hidden = false;
+      const tw = this.tip.offsetWidth, cvr = this.cv.offsetLeft, cvt = this.cv.offsetTop;
+      let left = cvr + this.hx + 12; if (left + tw > cvr + W) left = cvr + this.hx - tw - 12;
+      this.tip.style.left = Math.max(cvr, left) + 'px';
+      this.tip.style.top = (cvt + T + 4) + 'px';
+    }
+  }
+}
+function nearest(xs, v) {
+  const n = xs.length; if (!n) return -1;
+  let lo = 0, hi = n - 1;
+  const asc = xs[n - 1] >= xs[0];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if ((xs[m] < v) === asc) lo = m; else hi = m; }
+  return Math.abs(xs[lo] - v) <= Math.abs(xs[hi] - v) ? lo : hi;
+}
+const CHARTS = [];
+const chPower = new Chart($('#c-power')), chInv = new Chart($('#c-inv')), chHeat = new Chart($('#c-heat')),
+  chSpec = new Chart($('#c-spec')), chXS = new Chart($('#c-xs')), chSweep = new Chart($('#c-sweep')), chGain = new Chart($('#c-gain'));
+const redrawAll = () => { CHARTS.forEach(c => c.draw()); drawSchem(); if (typeof drawMap === 'function') drawMap(); };
+if ('ResizeObserver' in window) new ResizeObserver(() => redrawAll()).observe(document.body); else window.addEventListener('resize', redrawAll);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', redrawAll);
+new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- cross sections chart ---------- */
+function drawXS() {
+  const xs = [], a = [], e = [];
+  for (let l = 880; l <= 1150; l += 0.5) { xs.push(l); a.push(sigA(l) * 1e24); e.push(sigE(l) * 1e24); }
+  chXS.set({
+    x: { min: 880, max: 1150, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: 0, label: '断面積 (10⁻²⁴ m²)', fmt: v => v.toFixed(3) },
+    series: [{ x: xs, y: a, color: '--pump', label: '吸収 σa' }, { x: xs, y: e, color: '--sig', label: '放出 σe' }],
+    vlines: [{ x: P.lp, color: '--pump', label: `励起 ${P.lp}` }, { x: P.ls, color: '--sig', label: `信号 ${P.ls}` }],
+  });
+  $('#xs-sub').textContent = P.comp === 'user' ? '読み込んだ実測データ' : `${XS_SETS[P.comp].name}の代表的な形（近似）`;
+}
+
+/* ---------- schematic ---------- */
+let last = null;
+function drawSchem() {
+  const cv = $('#schem'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, Hh);
+  const mono = cssVar('--font-mono'), body = cssVar('--font-body');
+  const narrow = W < 560;
+  const fs = narrow ? 10 : 11.5;
+  const padX = narrow ? 64 : 120;
+  const x0 = padX, x1 = W - padX, yc = 72, th = 14;
+  const ink = cssVar('--ink'), muted = cssVar('--muted'), line = cssVar('--line');
+  const lo = hexRGB(cssVar('--inv-lo')), hi = hexRGB(cssVar('--inv-hi'));
+  // fiber colored by inversion
+  const r = last;
+  const nmax = r ? Math.max(...r.n2) : 0;
+  const scaleMax = Math.max(0.05, Math.min(1, Math.ceil(nmax * 10) / 10));
+  const nx = Math.max(2, Math.floor(x1 - x0));
+  for (let i = 0; i < nx; i++) {
+    let t = 0;
+    if (r) { const zi = (i / (nx - 1)) * (r.n2.length - 1); const k = Math.floor(zi), f = zi - k; const v = r.n2[k] * (1 - f) + (r.n2[Math.min(k + 1, r.n2.length - 1)] || 0) * f; t = clamp(v / scaleMax, 0, 1); }
+    ctx.fillStyle = `rgb(${mix(lo, hi, t).join(',')})`;
+    ctx.fillRect(x0 + i, yc - th / 2, 1.5, th);
+  }
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, yc - th / 2 + 0.5, x1 - x0 - 1, th - 1);
+  // combiners
+  const comb = (x) => { ctx.fillStyle = cssVar('--panel'); ctx.strokeStyle = muted; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.rect(x - 9, yc - 11, 18, 22); ctx.fill(); ctx.stroke(); };
+  // arrows
+  const arrow = (xa, ya, xb, yb, color, lw) => {
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
+    const ang = Math.atan2(yb - ya, xb - xa), s = 6 + lw;
+    ctx.beginPath(); ctx.moveTo(xb, yb); ctx.lineTo(xb - s * Math.cos(ang - 0.45), yb - s * Math.sin(ang - 0.45)); ctx.lineTo(xb - s * Math.cos(ang + 0.45), yb - s * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill();
+  };
+  const sigC = cssVar('--sig'), pumpC = cssVar('--pump'), asefC = cssVar('--asef');
+  arrow(8, yc, x0 - 14, yc, sigC, 2);
+  arrow(x1 + 12, yc, W - 8, yc, sigC, 2.6);
+  if (P.Ppf > 0) arrow(x0 - 30, yc + 44, x0 - 7, yc + 13, pumpC, 2);
+  if (P.Ppb > 0) arrow(x1 + 30, yc + 44, x1 + 7, yc + 13, pumpC, 2);
+  comb(x0); comb(x1);
+  ctx.textBaseline = 'alphabetic';
+  const txt = (s, x, y, al, c, f) => { ctx.fillStyle = c; ctx.font = f || `${fs}px ${mono}`; ctx.textAlign = al; ctx.fillText(s, x, y); };
+  txt('信号入力', 8, 16, 'left', muted, `${fs}px ${body}`);
+  txt(fmtWs(P.PsIn_mW * 1e-3), 8, 34, 'left', sigC, `600 ${fs + 1}px ${mono}`);
+  txt(`${P.ls} nm`, 8, 50, 'left', muted);
+  txt('出力信号', W - 8, 16, 'right', muted, `${fs}px ${body}`);
+  if (r) {
+    txt(fmtWs(r.out.sig), W - 8, 34, 'right', sigC, `600 ${fs + 1}px ${mono}`);
+    ctx.font = `${fs}px ${mono}`;
+    const rp = '残留励起 ' + fmtWs(r.pf[r.pf.length - 1]);
+    const as = 'ASE ' + fmtWs(r.out.aseF);
+    if (narrow) { txt(as, W - 8, 50, 'right', asefC); }
+    else { txt(rp, W - 8, 50, 'right', pumpC); const w = ctx.measureText(rp).width; txt(as + '  ', W - 8 - w, 50, 'right', asefC); }
+  }
+  if (P.Ppf > 0) txt(`励起 ${fmtWs(P.Ppf)}`, x0 - 30, yc + 58, 'left', pumpC);
+  if (P.Ppb > 0) txt(`励起 ${fmtWs(P.Ppb)}`, x1 + 30, yc + 58, 'right', pumpC);
+  txt('z = 0', x0 + 2, yc + 24, 'left', muted);
+  txt(`z = ${P.L} m`, x1 - 2, yc + 24, 'right', muted);
+  // inversion scale bar
+  const by = Hh - 14, bw = Math.min(160, (x1 - x0) * 0.4), bx = (x0 + x1) / 2 - bw / 2;
+  const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  g.addColorStop(0, `rgb(${lo.join(',')})`); g.addColorStop(1, `rgb(${hi.join(',')})`);
+  ctx.fillStyle = g; ctx.fillRect(bx, by, bw, 6);
+  txt('N₂/N  0', bx - 6, by + 7, 'right', muted);
+  txt(`${Math.round(scaleMax * 100)} %`, bx + bw + 6, by + 7, 'left', muted);
+}
+function hexRGB(c) {
+  c = c.trim();
+  if (c.startsWith('#')) { const h = c.length === 4 ? c.slice(1).split('').map(x => x + x).join('') : c.slice(1); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); }
+  const m = c.match(/\d+/g); return m ? m.slice(0, 3).map(Number) : [128, 128, 128];
+}
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+/* ---------- worker ---------- */
+const SRC = $('#solver').textContent;
+let worker = null, sweepWorker = null;
+function makeWorker() {
+  try { const url = URL.createObjectURL(new Blob([SRC], { type: 'text/javascript' })); return new Worker(url); } catch (e) { return null; }
+}
+worker = makeWorker();
+let busy = false, pending = false, runId = 0;
+function params() { return Object.assign({}, P, FIXED, { N: effN(), xs: currentXS() }); }
+function paramsWith(over) { const save = P; P = Object.assign({}, P, over); const out = params(); P = save; return out; }
+let lastS = null;
+function schedule() {
+  if (!worker) { setTimeout(() => { const p = params(); last = simulate(p); lastS = summarize(last, p); render(); }, 0); return; }
+  if (busy) { pending = true; return; }
+  busy = true; pending = false;
+  worker.postMessage({ type: 'run', id: ++runId, params: params() });
+}
+if (worker) {
+  worker.onmessage = (e) => {
+    if (e.data.type !== 'result') return;
+    busy = false;
+    last = e.data.r; lastS = e.data.s; render();
+    if (pending) schedule();
+  };
+  worker.onerror = () => { worker = null; busy = false; schedule(); };
+}
+
+/* ---------- render ---------- */
+let unitDbm = false;
+function render() {
+  const r = last; if (!r) return;
+  const o = r.out;
+  const launched = P.Ppf + P.Ppb;
+  const gain = dB(o.sig / o.sigIn);
+  const eff = launched > 0 ? (o.sig - o.sigIn) / launched : NaN;
+  const absorbed = launched - o.pumpRes;
+  let hmax = -Infinity, hz = 0; r.heat.forEach((h, i) => { if (h > hmax) { hmax = h; hz = r.z[i]; } });
+  const snr = dB(o.sig / Math.max(o.aseF, 1e-15));
+  const nmax = Math.max(...r.n2), navg = r.n2.reduce((a, b) => a + b, 0) / r.n2.length;
+  const kp = [
+    { k: '出力信号', c: '--sig', v: fmtW(o.sig), s: `利得 ${gain.toFixed(1)} dB` },
+    { k: '光-光変換効率', c: '--sig', v: [isFinite(eff) ? (eff * 100).toFixed(1) : '—', '%'], s: absorbed > 0 ? `吸収励起比 ${((o.sig - o.sigIn) / absorbed * 100).toFixed(1)} %` : '励起なし' },
+    { k: '残留励起', c: '--pump', v: fmtW(o.pumpRes), s: launched > 0 ? `投入の ${(o.pumpRes / launched * 100).toFixed(1)} %` : '—' },
+    { k: '前方 ASE', c: '--asef', v: fmtW(o.aseF), s: `信号/ASE ${isFinite(snr) ? snr.toFixed(1) : '—'} dB` },
+    { k: '後方 ASE', c: '--aseb', v: fmtW(o.aseB), s: `入力端へ戻る` },
+    { k: '最大熱負荷', c: '--heat', v: [hmax.toFixed(hmax < 10 ? 2 : 1), 'W/m'], s: `z = ${hz.toFixed(2)} m` },
+  ];
+  $('#kpis').innerHTML = kp.map(x => `<div class="kpi"><div class="k"><i style="background:var(${x.c})"></i>${x.k}</div><div class="v">${x.v[0]}<span>${x.v[1]}</span></div><div class="s">${x.s}</div></div>`).join('');
+
+  // status chips
+  const chips = [];
+  chips.push(r.converged ? ['ok', `収束 (${r.iters} 回反復)`] : ['bad', `未収束 (残差 ${r.err.toExponential(1)})`]);
+  const ms = modeInfo(P.coreD, P.NA, P.ls);
+  if (ms.V > 2.405) chips.push(['info', `マルチモードコア (V = ${ms.V.toFixed(2)})、基本モードで近似`]);
+  if (o.aseF > 0.1 * o.sig) chips.push(['warn', '前方 ASE が信号の 10 % 超。シード不足か利得過大']);
+  if (launched > 0 && o.aseB > 0.05 * launched) chips.push(['warn', '後方 ASE が強い。入力側にアイソレータが必要']);
+  if (gain > 40) chips.push(['warn', `単段で ${gain.toFixed(0)} dB は寄生発振の危険あり`]);
+  if (launched > 0 && o.pumpRes > 0.3 * launched) chips.push(['info', '励起の 30 % 超が未吸収。ファイバーを長くできます']);
+  if (gain < 0 && launched > 0) chips.push(['warn', '信号が吸収されている。長すぎるか励起不足']);
+  const S = lastS;
+  if (S) {
+    if (S.srsRatio > 50) chips.push(['warn', `出力が SRS しきい値の目安の ${S.srsRatio.toFixed(0)} %。ラマン光が出るおそれ`]);
+    if (o.sig > S.sbsTh) chips.push(['info', `狭線幅の信号なら SBS しきい値の目安 ${fmtWs(S.sbsTh)} を超えます`]);
+  }
+  if (P.comp === 'user') chips.push(['info', '実測の断面積データで計算中']);
+  $('#status').innerHTML = chips.map(([c, t]) => `<span class="chip ${c}">${t}</span>`).join('');
+  $('#schem-sub').textContent = `平均反転 ${(navg * 100).toFixed(1)} %、最大 ${(nmax * 100).toFixed(1)} %`;
+
+  // detail figures
+  const gs = r.gainSpec;
+  let gk = 0; gs.forEach((g, i) => { if (g > gs[gk]) gk = i; });
+  const gPeak = gs[gk], lPeak = r.aseL[gk];
+  let lo = gk, hi = gk;
+  while (lo > 0 && gs[lo - 1] >= gPeak - 3) lo--;
+  while (hi < gs.length - 1 && gs[hi + 1] >= gPeak - 3) hi++;
+  const bw3 = r.aseL[hi] - r.aseL[lo];
+  if (S) {
+    const det = [
+      ['利得ピーク', `${lPeak.toFixed(0)} nm`, `${gPeak.toFixed(1)} dB`],
+      ['3 dB 利得帯域', `${bw3.toFixed(0)} nm`, `${r.aseL[lo].toFixed(0)}–${r.aseL[hi].toFixed(0)}`],
+      ['OSNR (0.1 nm)', `${isFinite(S.osnr) ? S.osnr.toFixed(1) : '—'} dB`, '出力端'],
+      ['平均反転 N₂/N', `${S.nAvg.toFixed(1)} %`, `最大 ${(nmax * 100).toFixed(1)} %`],
+      ['飽和パワー (信号)', fmtWs(S.psatS), `${P.ls} nm`],
+      ['飽和パワー (励起)', fmtWs(S.psatP), `${P.lp} nm`],
+      ['飽和エネルギー (信号)', fmtJ(S.esatS), ''],
+      ['上準位の蓄積エネルギー', fmtJ(S.eStored), '全長'],
+      ['取り出し可能エネルギー', fmtJ(S.eExtract), 'Esat·lnG'],
+      ['実効モード面積 Aeff', `${(S.aeff * 1e12).toFixed(0)} µm²`, `MFD ${(ms.mfd * 1e6).toFixed(1)} µm`],
+      ['実効長 Leff', `${S.leff.toFixed(2)} m`, `全長 ${P.L} m`],
+      ['SRS しきい値の目安', fmtWs(S.srsTh), `出力は ${S.srsRatio < 0.1 ? S.srsRatio.toExponential(1) : S.srsRatio.toFixed(1)} %`],
+      ['SBS しきい値の目安', fmtWs(S.sbsTh), '狭線幅時'],
+      ['吸収された励起', fmtWs(absorbed), launched > 0 ? `${(absorbed / launched * 100).toFixed(1)} %` : ''],
+      ['入力 / 飽和パワー', `${(o.sigIn / S.psatS).toPrecision(3)}`, o.sigIn > S.psatS ? '飽和入力' : '小信号入力'],
+      ['量子限界の効率', `${(P.lp / P.ls * 100).toFixed(1)} %`, `${P.lp}→${P.ls} nm`],
+    ];
+    $('#detail').innerHTML = det.map(([k, v, n]) => `<div><dt>${k}</dt><dd>${v}${n ? `<small>${n}</small>` : ''}</dd></div>`).join('');
+  }
+  $('#gain-sub').textContent = `ピーク ${lPeak.toFixed(0)} nm で ${gPeak.toFixed(1)} dB、3 dB 帯域 ${bw3.toFixed(0)} nm`;
+  const gmin = Math.min(...gs);
+  chGain.set({
+    x: { min: P.aseMin, max: P.aseMax, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: Math.floor((Math.max(gmin, gPeak - 60) - 2) / 10) * 10, max: Math.ceil((gPeak + 4) / 10) * 10, label: '正味の利得 (dB)', fmt: v => v.toFixed(2) + ' dB' },
+    series: [{ x: r.aseL, y: gs, color: '--sig', label: '小信号利得（現在の反転分布）', fill: false, w: 2 }],
+    hlines: [{ y: 0, color: '--muted', label: '0 dB' }],
+    vlines: [{ x: P.ls, color: '--sig', label: `信号 ${P.ls}` }],
+  });
+
+  // power chart
+  const z = Array.from(r.z);
+  const conv = unitDbm ? (a) => Array.from(a, dBm) : (a) => Array.from(a);
+  const tipF = (a) => Array.from(a);
+  const ser = [
+    { x: z, y: conv(r.sig), tipY: tipF(r.sig), color: '--sig', label: '信号', w: 2.4 },
+    { x: z, y: conv(r.pf), tipY: tipF(r.pf), color: '--pump', label: '前方励起' },
+    { x: z, y: conv(r.pb), tipY: tipF(r.pb), color: '--pump', label: '後方励起', dash: true },
+    { x: z, y: conv(r.aseF), tipY: tipF(r.aseF), color: '--asef', label: '前方 ASE' },
+    { x: z, y: conv(r.aseB), tipY: tipF(r.aseB), color: '--aseb', label: '後方 ASE', dash: true },
+  ].filter(s => !(s.label.includes('励起') && Math.max(...s.tipY) <= 0));
+  let ymaxDbm = Math.max(...ser.map(s => Math.max(...s.y)));
+  chPower.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: unitDbm ? { label: 'パワー (dBm)', min: Math.max(-40, Math.floor(Math.min(...ser.map(s => Math.min(...s.y.filter(isFinite)))) / 10) * 10), max: Math.ceil((ymaxDbm + 2) / 5) * 5, fmt: fmtWs }
+                : { label: 'パワー (W)', zero: true, fmt: fmtWs },
+    series: ser,
+  });
+
+  // inversion
+  const ntr = sigA(P.ls) / (sigA(P.ls) + sigE(P.ls));
+  chInv.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: { min: 0, max: Math.max(Math.ceil((nmax * 100 + 3) / 10) * 10, Math.ceil((ntr * 100 + 3) / 5) * 5), label: 'N₂/N (%)', fmt: v => v.toFixed(2) + ' %' },
+    series: [{ x: z, y: Array.from(r.n2, v => v * 100), color: '--inv', label: '反転分布', fill: true, w: 2 }],
+    hlines: [{ y: ntr * 100, color: '--sig', label: `透明点 ${(ntr * 100).toFixed(1)} %` }],
+  });
+
+  // heat
+  chHeat.set({
+    x: { min: 0, max: P.L, label: '位置 z (m)', unit: 'm', fmt: v => 'z = ' + v.toFixed(3) },
+    y: { label: '熱負荷 (W/m)', zero: true, fmt: v => v.toFixed(3) + ' W/m' },
+    series: [{ x: z, y: Array.from(r.heat), color: '--heat', label: '熱負荷', fill: true, w: 2 }],
+  });
+
+  // spectrum
+  const res = P.aseRes;
+  const sF = r.specF.map(p => dBm(p / res)), sB = r.specB.map(p => dBm(p / res));
+  const sigDbm = dBm(o.sig);
+  const smax = Math.max(sigDbm, ...sF, ...sB);
+  chSpec.set({
+    x: { min: P.aseMin, max: P.aseMax, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: Math.min(-60, Math.floor((smax - 70) / 10) * 10), max: Math.ceil((smax + 5) / 10) * 10, label: 'dBm/nm', fmt: v => v.toFixed(1) + ' dBm/nm' },
+    series: [
+      { x: r.aseL, y: sF, color: '--asef', label: '前方 ASE (出力端)', w: 1.8 },
+      { x: r.aseL, y: sB, color: '--aseb', label: '後方 ASE (入力端)', w: 1.6, dash: true },
+    ],
+    stems: [{ x: P.ls, y: sigDbm, color: '--sig', label: `${sigDbm.toFixed(1)} dBm`, legend: '信号 (全パワー)' }],
+  });
+  drawSchem();
+}
+
+$('#u-w').addEventListener('click', () => { unitDbm = false; $('#u-w').setAttribute('aria-pressed', 'true'); $('#u-dbm').setAttribute('aria-pressed', 'false'); render(); });
+$('#u-dbm').addEventListener('click', () => { unitDbm = true; $('#u-w').setAttribute('aria-pressed', 'false'); $('#u-dbm').setAttribute('aria-pressed', 'true'); render(); });
+
+/* ---------- copy helpers ---------- */
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 1800); }
+async function copyText(txt, okMsg) {
+  try { await navigator.clipboard.writeText(txt); toast(okMsg); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
+    ta.remove(); toast(ok ? okMsg : 'クリップボードに書き込めませんでした');
+  }
+}
+$('#copy-z').addEventListener('click', () => {
+  const r = last; if (!r) return;
+  const rows = ['z_m,signal_W,pump_fwd_W,pump_bwd_W,ase_fwd_W,ase_bwd_W,n2_ratio,heat_W_per_m'];
+  for (let i = 0; i < r.z.length; i++) rows.push([r.z[i], r.sig[i], r.pf[i], r.pb[i], r.aseF[i], r.aseB[i], r.n2[i], r.heat[i]].map(v => +v.toPrecision(6)).join(','));
+  copyText(rows.join('\n'), `${r.z.length} 行をコピーしました`);
+});
+
+/* ---------- worker pool for sweeps and maps ---------- */
+const POOL_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+function runBatch(list, onEach) {
+  let next = 0, done = 0, cancelled = false, resolveF;
+  const ws = [];
+  const promise = new Promise(res => { resolveF = res; });
+  const finish = (ok) => { ws.forEach(w => w.terminate()); resolveF(ok); };
+  const feed = (w) => { if (next < list.length) { w.postMessage({ type: 'sum', id: 0, idx: next, params: list[next] }); next++; } };
+  for (let i = 0; i < Math.min(POOL_N, list.length); i++) {
+    const w = makeWorker(); if (!w) break;
+    ws.push(w);
+    w.onmessage = (e) => {
+      if (cancelled) return;
+      onEach(e.data.idx, e.data.s); done++;
+      if (done === list.length) finish(true); else feed(w);
+    };
+    w.onerror = () => { if (!cancelled) { cancelled = true; finish(false); } };
+    feed(w);
+  }
+  if (!ws.length) {
+    const step = () => {
+      if (cancelled) return;
+      const i = next++; onEach(i, summarize(simulate(list[i]), list[i])); done++;
+      if (done === list.length) { setXS(currentXS()); resolveF(true); } else setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  }
+  return { promise, cancel: () => { if (!cancelled) { cancelled = true; finish(false); } } };
+}
+
+/* ---------- sweep variables and metrics ---------- */
+const SW = {
+  pump: { label: '励起パワー合計', unit: 'W', range: () => [0, Math.max(1, +(2 * (P.Ppf + P.Ppb)).toPrecision(3))],
+    over: x => { const t = P.Ppf + P.Ppb, f = t > 0 ? P.Ppf / t : 1; return { Ppf: Math.max(0, x) * f, Ppb: Math.max(0, x) * (1 - f) }; } },
+  fwdFrac: { label: '前方励起の割合', unit: '%', range: () => [0, 100],
+    over: x => { const t = P.Ppf + P.Ppb, f = clamp(x, 0, 100) / 100; return { Ppf: t * f, Ppb: t * (1 - f) }; } },
+  L: { label: 'ファイバー長', unit: 'm', range: () => [0.2, +Math.max(1, 3 * P.L).toPrecision(3)], over: x => ({ L: Math.max(0.02, x) }) },
+  abs: { label: () => P.absMode === 'conc' ? 'Yb 濃度' : `${P.absMode === 'core' ? 'コア' : 'クラッド'}吸収@${P.absL}`,
+    unit: () => P.absMode === 'conc' ? '10²⁵/m³' : 'dB/m',
+    range: () => { const c = P.absMode === 'conc' ? P.N : P.absDB; return [+(c * 0.25).toPrecision(2), +(c * 3).toPrecision(2)]; },
+    over: x => P.absMode === 'conc' ? { N: Math.max(0.01, x) } : { absDB: Math.max(1e-3, x) } },
+  coreD: { label: 'コア径', unit: 'µm', range: () => [Math.max(2, Math.round(P.coreD * 0.5)), Math.round(P.coreD * 2)], over: x => ({ coreD: Math.max(1, x) }) },
+  seed: { label: '信号入力', unit: 'mW', log: true, range: () => [0.001, 1000], over: x => ({ PsIn_mW: Math.max(1e-7, x) }) },
+  ls: { label: '信号波長', unit: 'nm', range: () => [1010, 1110], over: x => ({ ls: x }) },
+  lp: { label: '励起波長', unit: 'nm', range: () => [905, 985], over: x => ({ lp: x }) },
+};
+const swL = v => typeof SW[v].label === 'function' ? SW[v].label() : SW[v].label;
+const swU = v => typeof SW[v].unit === 'function' ? SW[v].unit() : SW[v].unit;
+const fmtNum = v => isFinite(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toPrecision(4)).toString() : '—';
+const METRICS = [
+  { id: 'sig', label: '出力信号', unit: 'W', fmt: fmtWs, color: '--sig', best: 'max' },
+  { id: 'gainDB', label: '利得', unit: 'dB', fmt: v => v.toFixed(2) + ' dB', color: '--sig', best: 'max' },
+  { id: 'eff', label: '光-光変換効率', unit: '%', fmt: v => isFinite(v) ? v.toFixed(1) + ' %' : '—', color: '--sig', best: 'max' },
+  { id: 'pumpRes', label: '残留励起', unit: 'W', fmt: fmtWs, color: '--pump', best: 'min' },
+  { id: 'aseF', label: '前方 ASE', unit: 'W', fmt: fmtWs, color: '--asef', best: 'min' },
+  { id: 'aseB', label: '後方 ASE', unit: 'W', fmt: fmtWs, color: '--aseb', best: 'min' },
+  { id: 'osnr', label: 'OSNR (0.1 nm)', unit: 'dB', fmt: v => v.toFixed(1) + ' dB', color: '--asef', best: 'max' },
+  { id: 'heatMax', label: '最大熱負荷', unit: 'W/m', fmt: v => v.toFixed(2) + ' W/m', color: '--heat', best: 'min' },
+  { id: 'srsRatio', label: '出力 / SRS しきい値', unit: '%', fmt: v => (v < 0.1 ? v.toExponential(1) : v.toFixed(1)) + ' %', color: '--heat', best: 'min' },
+  { id: 'nAvg', label: '平均反転', unit: '%', fmt: v => v.toFixed(1) + ' %', color: '--inv', best: 'max' },
+];
+const MET = id => METRICS.find(m => m.id === id);
+const VAR_OPTS = Object.keys(SW).map(k => `<option value="${k}">${swL(k)}</option>`).join('');
+function refreshVarLabels() {
+  for (const sel of ['#sw-var', '#mx-var', '#my-var']) for (const o of $(sel).options) o.textContent = swL(o.value);
+}
+const linspace = (a, b, n, log) => Array.from({ length: n }, (_, i) => { const t = n > 1 ? i / (n - 1) : 0; return log ? a * Math.pow(b / a, t) : a + (b - a) * t; });
+function readRange(prefix, v, nMax) {
+  const s = SW[v];
+  let a = parseFloat($(`#${prefix}-from`).value), b = parseFloat($(`#${prefix}-to`).value);
+  const n = clamp(Math.round(parseFloat($(`#${prefix}-n`).value) || 21), 3, nMax);
+  $(`#${prefix}-n`).value = n;
+  if (!isFinite(a) || !isFinite(b) || a === b) return null;
+  if (s.log) { a = Math.max(1e-6, a); b = Math.max(1e-6, b); }
+  return linspace(a, b, n, s.log);
+}
+function setRange(prefix, v) {
+  const [a, b] = SW[v].range();
+  $(`#${prefix}-from`).value = a; $(`#${prefix}-to`).value = b;
+  $(`#${prefix}-u1`).textContent = `(${swU(v)})`; $(`#${prefix}-u2`).textContent = `(${swU(v)})`;
+}
+
+/* ---------- 1D sweep ---------- */
+const swVar = $('#sw-var'), swY = $('#sw-y');
+swVar.innerHTML = VAR_OPTS;
+swY.innerHTML = '<option value="powers">パワー（信号・励起・ASE）</option>' + METRICS.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+function resetSweepRange() { refreshVarLabels(); setRange('sw', swVar.value); }
+swVar.addEventListener('change', resetSweepRange);
+swY.addEventListener('change', () => renderSweep(true));
+let sweepJob = null, sweepPts = [], sweepMeta = null;
+$('#sw-run').addEventListener('click', async () => {
+  const v = swVar.value, xs = readRange('sw', v, 201);
+  if (!xs) { toast('開始と終了に異なる数値を入れてください'); return; }
+  if (sweepJob) sweepJob.cancel();
+  sweepMeta = { v, xs, label: swL(v), unit: swU(v), log: !!SW[v].log };
+  sweepPts = new Array(xs.length).fill(null);
+  const list = xs.map(x => paramsWith(SW[v].over(x)));
+  let n = 0;
+  $('#sw-run').textContent = '計算中…'; $('#sw-run').disabled = true; $('#sw-copy').disabled = true; $('#sw-prog').style.width = '0%';
+  const t0 = performance.now();
+  const job = runBatch(list, (i, s) => { sweepPts[i] = Object.assign({ x: xs[i] }, s); n++; $('#sw-prog').style.width = (n / xs.length * 100) + '%'; if (n % 4 === 0) renderSweep(false); });
+  sweepJob = job;
+  const ok = await job.promise;
+  if (sweepJob !== job) return;
+  sweepJob = null;
+  $('#sw-run').textContent = '掃引を実行'; $('#sw-run').disabled = false;
+  if (ok) { $('#sw-copy').disabled = false; sweepMeta.sec = (performance.now() - t0) / 1000; renderSweep(true); }
+});
+function renderSweep(final) {
+  if (!sweepMeta) return;
+  const pts = sweepPts.filter(Boolean); if (!pts.length) return;
+  const m = sweepMeta, tx = x => m.log ? Math.log10(x) : x;
+  const xs = pts.map(p => tx(p.x));
+  const yMode = swY.value;
+  let series, yCfg;
+  if (yMode === 'powers') {
+    series = [
+      { x: xs, y: pts.map(p => p.sig), color: '--sig', label: '出力信号', w: 2.4, dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.pumpRes), color: '--pump', label: '残留励起', dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.aseF), color: '--asef', label: '前方 ASE', dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.aseB), color: '--aseb', label: '後方 ASE', dash: true },
+    ];
+    yCfg = { label: 'パワー (W)', zero: true, fmt: fmtWs };
+  } else {
+    const me = MET(yMode);
+    series = [{ x: xs, y: pts.map(p => p[yMode]), color: me.color, label: me.label, w: 2.4, dots: pts.length <= 60, fill: true }];
+    yCfg = { label: `${me.label} (${me.unit})`, zero: me.unit === '%' || me.unit === 'W' || me.unit === 'W/m', fmt: me.fmt };
+  }
+  const marks = [];
+  let sub = final ? '' : `計算中 ${pts.length} / ${m.xs.length}`;
+  if (final && pts.length === m.xs.length) {
+    const key = yMode === 'powers' ? 'sig' : yMode, me = MET(key);
+    let bi = 0; pts.forEach((p, i) => { const a = p[key], b = pts[bi][key]; if (isFinite(a) && (!isFinite(b) || (me.best === 'max' ? a > b : a < b))) bi = i; });
+    if (!(m.v === 'pump' && key === 'sig') && !(m.v === 'seed' && key === 'sig')) {
+      marks.push({ x: xs[bi], y: pts[bi][key], color: me.color, label: `${me.best === 'max' ? '最大' : '最小'} ${me.fmt(pts[bi][key])} @ ${fmtNum(pts[bi].x)} ${m.unit}` });
+      sub = `${me.label}が${me.best === 'max' ? '最大' : '最小'}: ${fmtNum(pts[bi].x)} ${m.unit} で ${me.fmt(pts[bi][key])}`;
+    }
+    if (m.v === 'pump' && pts.length >= 4) {
+      const h = pts.slice(Math.floor(pts.length / 2));
+      const mx = h.reduce((a, p) => a + p.pump, 0) / h.length, my = h.reduce((a, p) => a + p.sig, 0) / h.length;
+      let sxy = 0, sxx = 0; h.forEach(p => { sxy += (p.pump - mx) * (p.sig - my); sxx += (p.pump - mx) ** 2; });
+      const slope = sxx > 0 ? sxy / sxx : NaN, th = isFinite(slope) && slope > 0 ? mx - my / slope : NaN;
+      sub = `スロープ効率 ${(slope * 100).toFixed(1)} %（後半の点で直線近似）` + (isFinite(th) && th > 0 ? `、外挿しきい値 ${fmtWs(th)}` : '');
+    }
+    const nc = pts.filter(p => !p.conv).length;
+    if (nc) sub += `　未収束 ${nc} 点`;
+    if (m.sec) sub += `　（${pts.length} 点、${m.sec.toFixed(1)} 秒）`;
+  }
+  $('#sw-sub').textContent = sub || '完了';
+  const xr = m.xs.map(tx);
+  chSweep.set({
+    x: { min: Math.min(...xr), max: Math.max(...xr), label: `${m.label} (${m.unit}${m.log ? '、対数' : ''})`, unit: '',
+      fmt: v => m.log ? fmtWs(Math.pow(10, v) * 1e-3) + ' 入力' : `${fmtNum(v)} ${m.unit}` },
+    y: yCfg, series, marks,
+  });
+  const cols = [['sig', '出力信号'], ['gainDB', '利得'], ['eff', '効率'], ['pump', '励起投入'], ['pumpRes', '残留励起'], ['aseF', '前方ASE'], ['aseB', '後方ASE'], ['osnr', 'OSNR'], ['heatMax', '最大熱負荷'], ['srsRatio', '出力/SRS'], ['nAvg', '平均反転']];
+  const fm = (k, v) => k === 'pump' ? fmtWs(v) : MET(k).fmt(v);
+  const head = `<tr><th>${m.label} (${m.unit})</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr>`;
+  const rows = pts.map(p => `<tr><td>${fmtNum(p.x)}</td>${cols.map(([k]) => `<td>${fm(k, p[k])}</td>`).join('')}</tr>`).join('');
+  $('#sw-tbl').innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+const CSV_KEYS = ['sig', 'sigIn', 'gainDB', 'eff', 'pump', 'pumpRes', 'aseF', 'aseB', 'osnr', 'heatMax', 'srsTh', 'sbsTh', 'srsRatio', 'nAvg', 'eStored', 'eExtract', 'conv'];
+const CSV_HEAD = 'signal_out_W,signal_in_W,gain_dB,efficiency_pct,pump_W,pump_residual_W,ase_fwd_W,ase_bwd_W,osnr_dB_0.1nm,heat_max_W_per_m,srs_threshold_W,sbs_threshold_W,out_over_srs_pct,inversion_avg_pct,stored_energy_J,extractable_energy_J,converged';
+const csvVals = p => CSV_KEYS.map(k => typeof p[k] === 'boolean' ? p[k] : +(+p[k]).toPrecision(6)).join(',');
+$('#sw-copy').addEventListener('click', () => {
+  const pts = sweepPts.filter(Boolean); if (!pts.length) return;
+  const rows = [`${sweepMeta.v}_${sweepMeta.unit},${CSV_HEAD}`];
+  pts.forEach(p => rows.push(`${+p.x.toPrecision(6)},${csvVals(p)}`));
+  copyText(rows.join('\n'), `${pts.length} 行をコピーしました`);
+});
+
+/* ---------- 2D map ---------- */
+const mxVar = $('#mx-var'), myVar = $('#my-var'), mapM = $('#map-m');
+mxVar.innerHTML = VAR_OPTS; myVar.innerHTML = VAR_OPTS;
+mapM.innerHTML = METRICS.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+mxVar.value = 'L'; myVar.value = 'pump';
+const resetMapRange = () => { refreshVarLabels(); setRange('mx', mxVar.value); setRange('my', myVar.value); };
+mxVar.addEventListener('change', () => { refreshVarLabels(); setRange('mx', mxVar.value); });
+myVar.addEventListener('change', () => { refreshVarLabels(); setRange('my', myVar.value); });
+mapM.addEventListener('change', () => drawMap());
+let mapJob = null, mapData = null, mapHover = null;
+$('#map-run').addEventListener('click', async () => {
+  const vx = mxVar.value, vy = myVar.value;
+  if (vx === vy) { toast('横と縦には別の量を選んでください'); return; }
+  const xs = readRange('mx', vx, 61), ys = readRange('my', vy, 61);
+  if (!xs || !ys) { toast('開始と終了に異なる数値を入れてください'); return; }
+  if (mapJob) mapJob.cancel();
+  const fast = { nz: Math.min(P.nz, 100), aseRes: Math.max(P.aseRes, 4) };
+  const list = [];
+  for (let j = 0; j < ys.length; j++) for (let i = 0; i < xs.length; i++) list.push(paramsWith(Object.assign({}, SW[vx].over(xs[i]), SW[vy].over(ys[j]), fast)));
+  // the current operating point, as plotted coordinates
+  const cur = { pump: P.Ppf + P.Ppb, fwdFrac: (P.Ppf + P.Ppb) > 0 ? P.Ppf / (P.Ppf + P.Ppb) * 100 : 100, L: P.L, abs: P.absMode === 'conc' ? P.N : P.absDB, coreD: P.coreD, seed: P.PsIn_mW, ls: P.ls, lp: P.lp };
+  mapData = { vx, vy, xs, ys, cells: new Array(list.length).fill(null), done: 0, lx: swL(vx), ly: swL(vy), ux: swU(vx), uy: swU(vy), cx: cur[vx], cy: cur[vy] };
+  const md = mapData;
+  $('#map-run').textContent = '計算中…'; $('#map-run').disabled = true; $('#map-copy').disabled = true; $('#map-prog').style.width = '0%';
+  const t0 = performance.now();
+  let lastDraw = 0;
+  const job = runBatch(list, (k, s) => {
+    md.cells[k] = s; md.done++;
+    $('#map-prog').style.width = (md.done / list.length * 100) + '%';
+    const t = performance.now(); if (t - lastDraw > 250) { lastDraw = t; drawMap(); }
+  });
+  mapJob = job;
+  const ok = await job.promise;
+  if (mapJob !== job) return;
+  mapJob = null;
+  $('#map-run').textContent = 'マップを計算'; $('#map-run').disabled = false;
+  if (ok) { md.sec = (performance.now() - t0) / 1000; $('#map-copy').disabled = false; }
+  drawMap();
+});
+const RAMP = [[0, [38, 40, 92]], [0.25, [44, 94, 140]], [0.5, [33, 145, 136]], [0.75, [127, 190, 75]], [1, [246, 214, 60]]];
+function rampColor(t) {
+  t = clamp(t, 0, 1);
+  for (let i = 1; i < RAMP.length; i++) if (t <= RAMP[i][0]) { const [t0, c0] = RAMP[i - 1], [t1, c1] = RAMP[i]; return `rgb(${mix(c0, c1, (t - t0) / (t1 - t0)).join(',')})`; }
+  return `rgb(${RAMP[RAMP.length - 1][1].join(',')})`;
+}
+function drawMap() {
+  const cv = $('#map-cv'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, Hh);
+  const mono = cssVar('--font-mono'), body = cssVar('--font-body'), muted = cssVar('--muted'), line = cssVar('--line'), ink = cssVar('--ink');
+  const md = mapData;
+  if (!md) {
+    ctx.fillStyle = muted; ctx.font = `13px ${body}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('「マップを計算」を押すと、ここに結果が色で表示されます。', W / 2, Hh / 2);
+    return;
+  }
+  const me = MET(mapM.value);
+  const tX = SW[md.vx].log ? Math.log10 : (v => v), tY = SW[md.vy].log ? Math.log10 : (v => v);
+  const gx = md.xs.map(tX), gy = md.ys.map(tY);
+  const vals = md.cells.map(c => c ? c[me.id] : NaN);
+  const fin = vals.filter(isFinite);
+  const vmin = fin.length ? Math.min(...fin) : 0, vmax = fin.length ? Math.max(...fin) : 1;
+  const L = 64, R = 92, T = 10, B = 40, pw = W - L - R, ph = Hh - T - B;
+  const x0 = Math.min(...gx), x1 = Math.max(...gx), y0 = Math.min(...gy), y1 = Math.max(...gy);
+  const dxh = (x1 - x0) / (gx.length - 1) / 2, dyh = (y1 - y0) / (gy.length - 1) / 2;
+  const ax0 = x0 - dxh, ax1 = x1 + dxh, ay0 = y0 - dyh, ay1 = y1 + dyh;
+  const X = v => L + (v - ax0) / (ax1 - ax0) * pw, Y = v => T + (1 - (v - ay0) / (ay1 - ay0)) * ph;
+  const nx = gx.length;
+  ctx.fillStyle = cssVar('--grid'); ctx.fillRect(L, T, pw, ph);
+  let best = -1;
+  for (let k = 0; k < vals.length; k++) {
+    const v = vals[k]; if (!isFinite(v)) continue;
+    const i = k % nx, j = Math.floor(k / nx);
+    const xa = X(gx[i] - dxh), xb = X(gx[i] + dxh), ya = Y(gy[j] + dyh), yb = Y(gy[j] - dyh);
+    ctx.fillStyle = rampColor(vmax > vmin ? (v - vmin) / (vmax - vmin) : 0.5);
+    ctx.fillRect(Math.floor(xa), Math.floor(ya), Math.ceil(xb - xa) + 1, Math.ceil(yb - ya) + 1);
+    if (best < 0 || (me.best === 'max' ? v > vals[best] : v < vals[best])) best = k;
+  }
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(L + 0.5, T + 0.5, pw, ph);
+  // axes
+  ctx.font = `11px ${mono}`; ctx.fillStyle = muted;
+  const xt = ticks(x0, x1, Math.max(3, Math.round(pw / 90)));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const v of xt.out) { const x = X(v); ctx.fillRect(x, T + ph, 1, 4); const s = SW[md.vx].log ? fmtNum(Math.pow(10, v)) : tickFmt(v, xt.st); ctx.fillText(s, clamp(x, L + 12, L + pw - 12), T + ph + 6); }
+  const yt = ticks(y0, y1, Math.max(3, Math.round(ph / 50)));
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const v of yt.out) { const y = Y(v); ctx.fillRect(L - 4, y, 4, 1); ctx.fillText(SW[md.vy].log ? fmtNum(Math.pow(10, v)) : tickFmt(v, yt.st), L - 6, y); }
+  ctx.font = `11px ${body}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`${md.lx} (${md.ux})`, L + pw / 2, Hh - 2);
+  ctx.save(); ctx.translate(12, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(`${md.ly} (${md.uy})`, 0, 0); ctx.restore();
+  // color bar
+  const cbx = L + pw + 18, cbw = 12;
+  for (let p = 0; p < ph; p++) { ctx.fillStyle = rampColor(1 - p / ph); ctx.fillRect(cbx, T + p, cbw, 1.5); }
+  ctx.strokeStyle = line; ctx.strokeRect(cbx + 0.5, T + 0.5, cbw, ph);
+  ctx.fillStyle = muted; ctx.font = `10.5px ${mono}`; ctx.textAlign = 'left';
+  ctx.textBaseline = 'top'; ctx.fillText(fin.length ? me.fmt(vmax) : '', cbx + cbw + 4, T);
+  ctx.textBaseline = 'bottom'; ctx.fillText(fin.length ? me.fmt(vmin) : '', cbx + cbw + 4, T + ph);
+  ctx.save(); ctx.translate(cbx + cbw + 12, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `11px ${body}`; ctx.fillText(me.label, 0, 0); ctx.restore();
+  // operating point and best cell
+  const cx = tX(md.cx), cy = tY(md.cy);
+  if (isFinite(cx) && isFinite(cy) && cx >= ax0 && cx <= ax1 && cy >= ay0 && cy <= ay1) {
+    ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(X(cx), Y(cy), 6, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = '#111'; ctx.beginPath(); ctx.arc(X(cx), Y(cy), 7.5, 0, 7); ctx.stroke();
+  }
+  if (best >= 0 && md.done === md.cells.length) {
+    const bx = X(gx[best % nx]), by = Y(gy[Math.floor(best / nx)]);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, by - 7); ctx.lineTo(bx + 6, by); ctx.lineTo(bx, by + 7); ctx.lineTo(bx - 6, by); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  // subtitle
+  if (md.done === md.cells.length && best >= 0) {
+    const c = md.cells[best];
+    $('#map-sub').textContent = `${me.label}が${me.best === 'max' ? '最大' : '最小'}: ${md.lx} ${fmtNum(md.xs[best % nx])} ${md.ux}、${md.ly} ${fmtNum(md.ys[Math.floor(best / nx)])} ${md.uy} で ${me.fmt(c[me.id])}` + (md.sec ? `（${md.cells.length} 点、${md.sec.toFixed(1)} 秒）` : '');
+  } else $('#map-sub').textContent = `計算中 ${md.done} / ${md.cells.length}`;
+  // hover
+  md.geo = { L, T, pw, ph, ax0, ax1, ay0, ay1, nx, gx, gy, dxh, dyh };
+  if (mapHover) {
+    const { hx, hy } = mapHover;
+    if (hx >= L && hx <= L + pw && hy >= T && hy <= T + ph) {
+      const vx = ax0 + (hx - L) / pw * (ax1 - ax0), vy = ay0 + (1 - (hy - T) / ph) * (ay1 - ay0);
+      const i = nearest(gx, vx), j = nearest(gy, vy), c = md.cells[j * nx + i];
+      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.strokeRect(X(gx[i] - dxh), Y(gy[j] + dyh), X(gx[i] + dxh) - X(gx[i] - dxh), Y(gy[j] - dyh) - Y(gy[j] + dyh));
+      const tip = mapTip;
+      tip.innerHTML = `<b>${md.lx}</b> ${fmtNum(md.xs[i])} ${md.ux}<br><b>${md.ly}</b> ${fmtNum(md.ys[j])} ${md.uy}<br>` +
+        (c ? `${me.label}: <b>${me.fmt(c[me.id])}</b>` + (me.id !== 'sig' ? `<br>出力 ${fmtWs(c.sig)}` : '') + (me.id !== 'eff' ? `<br>効率 ${isFinite(c.eff) ? c.eff.toFixed(1) : '—'} %` : '') : '計算中');
+      tip.hidden = false;
+      const tw = tip.offsetWidth;
+      tip.style.left = (hx + 14 + tw > W ? hx - tw - 14 : hx + 14) + 'px';
+      tip.style.top = Math.max(0, hy - 10) + 'px';
+    } else mapTip.hidden = true;
+  }
+}
+const mapTip = document.createElement('div'); mapTip.className = 'tip'; mapTip.hidden = true; $('#map-wrap').appendChild(mapTip);
+{
+  const cv = $('#map-cv');
+  const mv = (e) => { const r = cv.getBoundingClientRect(); mapHover = { hx: e.clientX - r.left, hy: e.clientY - r.top }; drawMap(); };
+  cv.addEventListener('pointermove', mv); cv.addEventListener('pointerdown', mv);
+  cv.addEventListener('pointerleave', () => { mapHover = null; mapTip.hidden = true; drawMap(); });
+}
+$('#map-copy').addEventListener('click', () => {
+  const md = mapData; if (!md) return;
+  const rows = [`${md.vx}_${md.ux},${md.vy}_${md.uy},${CSV_HEAD}`];
+  md.cells.forEach((c, k) => { if (c) rows.push(`${+md.xs[k % md.xs.length].toPrecision(6)},${+md.ys[Math.floor(k / md.xs.length)].toPrecision(6)},${csvVals(c)}`); });
+  copyText(rows.join('\n'), `${rows.length - 1} 行をコピーしました`);
+});
+
+/* ---------- cross-section import ---------- */
+const readFile = (inp, ta) => inp.addEventListener('change', () => {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const fr = new FileReader(); fr.onload = () => { ta.value = String(fr.result); }; fr.readAsText(f);
+});
+readFile($('#imp-fa'), $('#imp-a')); readFile($('#imp-fe'), $('#imp-e'));
+$('#imp-go').addEventListener('click', () => {
+  const msg = $('#imp-msg');
+  try {
+    const info = importXS($('#imp-a').value, $('#imp-e').value, false);
+    msg.className = 'msg'; msg.textContent = info;
+    onParam('comp', 'user', 'sel');
+    toast('実測の断面積で計算しています');
+  } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
+});
+$('#imp-ex').addEventListener('click', () => {
+  const a = [], e = [];
+  for (let l = 880; l <= 1150; l += 2) { a.push(`${l}, ${(sigA(l) * 1e24).toFixed(4)}`); e.push(`${l}, ${(sigE(l) * 1e24).toFixed(4)}`); }
+  $('#imp-a').value = '# 波長 nm, 吸収断面積 1e-24 m2\n' + a.join('\n');
+  $('#imp-e').value = '# 波長 nm, 放出断面積 1e-24 m2\n' + e.join('\n');
+  $('#imp-msg').className = 'msg'; $('#imp-msg').textContent = '今使っている断面積を書き出しました。書き換えてから「読み込んで使う」を押せます。';
+});
+if (USER_XS_INFO) $('#imp-msg').textContent = '保存済みの実測データ: ' + USER_XS_INFO;
+
+/* ---------- boot ---------- */
+applyXS();
+if (P.absMode !== 'conc') P.N = effN();
+applyPumpRange();
+syncInputs();
+presetSel.value = matchPreset();
+updateDerived();
+drawXS();
+resetSweepRange();
+resetMapRange();
+drawMap();
+schedule();
+})();
+</script>
+</body>
+</html>
