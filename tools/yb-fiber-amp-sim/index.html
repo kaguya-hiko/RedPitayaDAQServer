@@ -168,6 +168,28 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
 .notes ul { margin: 6px 0 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 95ch; }
 .notes code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); }
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 4px; font-size: 0.82rem; z-index: 20; }
+.detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 24px; margin: 0; }
+.detail div { display: grid; gap: 1px; padding: 7px 0 8px; border-bottom: 1px solid var(--grid); min-width: 0; align-content: start; }
+.detail dt { font-size: 0.76rem; color: var(--muted); }
+.detail dd { margin: 0; font-family: var(--font-mono); font-size: 0.98rem; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.detail dd small { color: var(--muted); font-size: 0.72rem; }
+.xs-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .xs-grid { grid-template-columns: minmax(0, 1fr); } }
+.imp { display: grid; gap: 8px; font-size: 0.8rem; }
+.imp p { margin: 0; color: var(--muted); }
+.imp textarea { width: 100%; min-height: 92px; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; resize: vertical; }
+.imp .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.imp label.lbl { font-size: 0.74rem; color: var(--muted); }
+.imp input[type="file"] { font-size: 0.74rem; color: var(--muted); max-width: 100%; }
+.imp .msg { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); white-space: pre-wrap; }
+.imp .msg.err { color: var(--bad); }
+.sweep-ctl .f select { max-width: 200px; }
+.axis-set { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; padding: 8px 10px; border: 1px solid var(--grid); border-radius: 4px; }
+.axis-set > b { font-size: 0.74rem; color: var(--muted); font-weight: 600; align-self: center; min-width: 1.5em; }
+.axis-set .f input { width: 92px; }
+.map-wrap { position: relative; }
+.map-wrap canvas { width: 100%; height: 380px; display: block; touch-action: pan-y; }
+.note { font-size: 0.74rem; color: var(--muted); margin: 6px 0 0; }
 @media (prefers-reduced-motion: reduce) { .prog div { transition: none; } }
 </style>
 
@@ -199,6 +221,11 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
 
       <section class="kpis" id="kpis" aria-label="主要な出力値"></section>
 
+      <section class="card">
+        <div class="card-h"><h3>詳細な出力値</h3><span class="sub">しきい値は目安です</span></div>
+        <dl class="detail" id="detail"></dl>
+      </section>
+
       <section class="charts">
         <div class="card chart tall wide" id="c-power">
           <div class="card-h">
@@ -225,29 +252,40 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
           <div class="card-h"><h3>出力スペクトル</h3><span class="sub" id="spec-sub">ASE は dBm/nm、信号は全パワー</span></div>
           <canvas></canvas><div class="legend"></div>
         </div>
-        <div class="card chart" id="c-xs">
-          <div class="card-h"><h3>Yb 吸収・誘導放出断面積</h3><span class="sub">アルミノシリケートの代表値</span></div>
+        <div class="card chart" id="c-gain">
+          <div class="card-h"><h3>利得スペクトル</h3><span class="sub" id="gain-sub"></span></div>
           <canvas></canvas><div class="legend"></div>
+        </div>
+        <div class="card wide">
+          <div class="card-h"><h3>Yb 吸収・誘導放出断面積</h3><span class="sub" id="xs-sub"></span></div>
+          <div class="xs-grid">
+            <div class="chart" id="c-xs"><canvas></canvas><div class="legend"></div></div>
+            <div class="imp">
+              <p>メーカーや文献の実測データがあれば読み込めます。各行に「波長, 断面積」を書きます。1 つの表に「波長, 吸収, 放出」の 3 列で書いても読めます。単位は自動で判定します（nm/µm、m²/cm²/10⁻²⁴ m²）。</p>
+              <label class="lbl" for="imp-a">吸収断面積（3 列ならこちらだけ）</label>
+              <textarea id="imp-a" spellcheck="false" placeholder="900, 0.45e-24&#10;915, 0.80e-24&#10;..."></textarea>
+              <input type="file" id="imp-fa" accept=".csv,.txt,.dat,.tsv" aria-label="吸収断面積のファイル">
+              <label class="lbl" for="imp-e">放出断面積</label>
+              <textarea id="imp-e" spellcheck="false" placeholder="1000, 0.25e-24&#10;1030, 0.65e-24&#10;..."></textarea>
+              <input type="file" id="imp-fe" accept=".csv,.txt,.dat,.tsv" aria-label="放出断面積のファイル">
+              <div class="row"><button type="button" id="imp-go">読み込んで使う</button><button type="button" class="ghost" id="imp-ex">今の断面積を入れる</button></div>
+              <div class="msg" id="imp-msg"></div>
+            </div>
+          </div>
         </div>
       </section>
 
       <section class="card">
         <div class="card-h">
           <h3>パラメータ掃引</h3>
-          <span class="sub" id="sw-sub">1つの条件を動かして出力の変化を調べます</span>
+          <span class="sub" id="sw-sub">1 つの条件を動かして出力の変化を調べます</span>
         </div>
         <div class="sweep-ctl">
-          <div class="f"><label for="sw-var">掃引する量</label>
-            <select id="sw-var">
-              <option value="pump">励起パワー (合計)</option>
-              <option value="L">ファイバー長</option>
-              <option value="seed">信号入力パワー</option>
-              <option value="ls">信号波長</option>
-              <option value="lp">励起波長</option>
-            </select></div>
+          <div class="f"><label for="sw-var">掃引する量</label><select id="sw-var"></select></div>
           <div class="f"><label for="sw-from">開始 <span id="sw-u1"></span></label><input id="sw-from" type="number" step="any"></div>
           <div class="f"><label for="sw-to">終了 <span id="sw-u2"></span></label><input id="sw-to" type="number" step="any"></div>
-          <div class="f"><label for="sw-n">点数</label><input id="sw-n" type="number" min="3" max="80" step="1" value="21"></div>
+          <div class="f"><label for="sw-n">点数 (3〜201)</label><input id="sw-n" type="number" min="3" max="201" step="1" value="41"></div>
+          <div class="f"><label for="sw-y">グラフの縦軸</label><select id="sw-y"></select></div>
           <button type="button" id="sw-run">掃引を実行</button>
           <button type="button" class="ghost" id="sw-copy" disabled>表をCSVでコピー</button>
         </div>
@@ -256,16 +294,46 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
         <div class="tbl-wrap" id="sw-tbl"><div class="empty">「掃引を実行」を押すと、ここに各点の結果が並びます。</div></div>
       </section>
 
+      <section class="card">
+        <div class="card-h">
+          <h3>2 次元マップ</h3>
+          <span class="sub" id="map-sub">2 つの条件を同時に動かし、指標の分布を色で表示します</span>
+        </div>
+        <div class="sweep-ctl">
+          <div class="axis-set"><b>横</b>
+            <div class="f"><label for="mx-var">量</label><select id="mx-var"></select></div>
+            <div class="f"><label for="mx-from">開始 <span id="mx-u1"></span></label><input id="mx-from" type="number" step="any"></div>
+            <div class="f"><label for="mx-to">終了 <span id="mx-u2"></span></label><input id="mx-to" type="number" step="any"></div>
+            <div class="f"><label for="mx-n">点数</label><input id="mx-n" type="number" min="3" max="61" step="1" value="21"></div>
+          </div>
+          <div class="axis-set"><b>縦</b>
+            <div class="f"><label for="my-var">量</label><select id="my-var"></select></div>
+            <div class="f"><label for="my-from">開始 <span id="my-u1"></span></label><input id="my-from" type="number" step="any"></div>
+            <div class="f"><label for="my-to">終了 <span id="my-u2"></span></label><input id="my-to" type="number" step="any"></div>
+            <div class="f"><label for="my-n">点数</label><input id="my-n" type="number" min="3" max="61" step="1" value="21"></div>
+          </div>
+          <div class="f"><label for="map-m">色で表す指標</label><select id="map-m"></select></div>
+          <button type="button" id="map-run">マップを計算</button>
+          <button type="button" class="ghost" id="map-copy" disabled>CSVでコピー</button>
+        </div>
+        <div class="prog"><div id="map-prog"></div></div>
+        <div class="map-wrap" id="map-wrap"><canvas id="map-cv" aria-label="2 次元マップ"></canvas></div>
+        <p class="note">計算を速くするため、マップは z 分割 100・ASE 分解能 4 nm で計算します（通常の計算との差は 0.1 % 程度）。○ は現在の条件、◆ は指標が最良の点です。指標を切り替えても再計算は不要です。</p>
+      </section>
+
       <section class="card notes">
         <h3>計算モデル</h3>
         <ul>
           <li>Yb³⁺ を2準位系として扱い、定常レート方程式と伝搬方程式を z 方向に解きます。前方・後方の伝搬を交互に積分し、端面出力の相対変化が 10⁻⁶ 未満になるまで繰り返します（Heun 法・指数積分）。</li>
           <li>ASE は指定した波長範囲を等間隔のチャネルに分け、前方・後方それぞれに自然放出項 <code>2hνΔν·Γσₑ N₂</code> を入れています。</li>
           <li>信号とコア励起のオーバーラップ Γ は基本モードのガウス近似（Marcuse の式）から、クラッド励起は面積比 (a<sub>core</sub>/a<sub>clad</sub>)² から求めています。マルチモードコアでも基本モードとして扱います。</li>
-          <li>断面積は代表的な Yb ドープ・アルミノシリケートファイバーの文献値に合わせたガウス関数の和です（976 nm で約 2.5×10⁻²⁴ m²、1030 nm 放出で約 0.7×10⁻²⁴ m²）。実際のファイバーとは数十 % 程度ずれることがあります。</li>
+          <li>内蔵の断面積は 3 種類のガラス組成（アルミノシリケート、ゲルマノシリケート、リン酸シリケート）の代表的なスペクトル形状をガウス関数の和で再現した近似で、測定値そのものではありません。0.25 nm 間隔の表にして線形補間しています。実測データを読み込むと、それを同じ表に変換して使います。</li>
+          <li>ファイバー品種の一覧は、代表的な形状とスペックの目安です。実際の品番を使うときは、スペックシートのコア径・NA・吸収値で上書きしてください。</li>
+          <li>SRS しきい値は 16·A<sub>eff</sub>/(g<sub>R</sub>·L<sub>eff</sub>)（g<sub>R</sub> = 1×10⁻¹³ m/W）、SBS しきい値は 21·A<sub>eff</sub>/(g<sub>B</sub>·L<sub>eff</sub>)（g<sub>B</sub> = 5×10⁻¹¹ m/W、狭線幅信号の場合）で見積もっています。L<sub>eff</sub> は信号パワー分布を出力パワーで割って積分した実効長です。</li>
+          <li>取り出し可能エネルギーは E<sub>sat</sub>·ln G（E<sub>sat</sub> = hν·A/(Γ(σₐ+σₑ))、G は現在の信号利得）で、パルス増幅の目安です。</li>
           <li>ドープ量はスペックシートの小信号吸収 (dB/m) で指定できます。クラッド吸収は α = 4.34·(a<sub>core</sub>/a<sub>clad</sub>)²·σₐ(λ)·N、コア吸収は α = 4.34·Γ(λ)·σₐ(λ)·N として Yb 濃度 N に換算します。976 nm の吸収ピークは鋭いため、基準波長はスペックシートと同じものを選んでください。</li>
           <li>熱負荷は平均蛍光波長 1005 nm を基準にした量子欠損と背景損失から見積もっています。</li>
-          <li>考慮していないもの: 非線形効果（SRS・SBS・SPM）、フォトダークニング、温度依存性、パルス動作、端面反射による寄生発振。</li>
+          <li>考慮していないもの: 非線形効果の伝搬（SRS・SBS はしきい値の目安のみ）、SPM、フォトダークニング、温度依存性、パルス動作、端面反射による寄生発振。</li>
         </ul>
       </section>
     </main>
@@ -277,18 +345,56 @@ th { position: sticky; top: 0; background: var(--panel); color: var(--muted); fo
 /* ===== Yb fiber amplifier model (steady-state, two-level, ASE) ===== */
 const H = 6.62607015e-34, C0 = 2.99792458e8;
 
-/* Approximate Yb:aluminosilicate cross-sections, sums of Gaussians.
-   lambda in nm, result in m^2. Values tuned to typical published spectra:
-   sa(915)~0.8e-24, sa=se(976)~2.6e-24, se(1030)~0.7e-24, se(1064)~0.27e-24 */
-const ABS_TERMS = [[975.5, 2.45, 3.4], [912, 0.70, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]];
-const EMI_TERMS = [[975.5, 2.45, 3.4], [997, 0.22, 14], [1028, 0.60, 18], [1065, 0.25, 40], [955, 0.07, 18]];
+/* Yb cross-section tables on a 0.25 nm grid (850-1200 nm), linear interpolation, zero outside.
+   Built-in sets are sums of Gaussians shaped after typical published spectra for each glass host;
+   measured data can replace them via xsFromPoints(). Units: m^2. */
+const XS_L0 = 850, XS_DL = 0.25, XS_N = 1401;
+const XS_SETS = {
+  al: { name: 'アルミノシリケート',
+    abs: [[975.5, 2.45, 3.4], [912, 0.70, 18], [948, 0.38, 26], [1005, 0.12, 22], [1040, 0.02, 38]],
+    emi: [[975.5, 2.45, 3.4], [997, 0.22, 14], [1028, 0.60, 18], [1065, 0.25, 40], [955, 0.07, 18]] },
+  ge: { name: 'ゲルマノシリケート',
+    abs: [[975, 2.6, 2.9], [914, 0.62, 16], [947, 0.33, 22], [1004, 0.10, 20], [1040, 0.015, 35]],
+    emi: [[975, 2.6, 2.9], [996, 0.18, 12], [1027, 0.55, 15], [1062, 0.20, 36], [955, 0.06, 16]] },
+  p: { name: 'リン酸シリケート',
+    abs: [[975.5, 1.35, 4.6], [916, 0.50, 20], [945, 0.30, 25], [1000, 0.12, 25], [1040, 0.025, 40]],
+    emi: [[975.5, 1.35, 4.6], [1000, 0.25, 16], [1025, 0.45, 22], [1060, 0.25, 42], [955, 0.05, 18]] },
+};
 function gsum(terms, l) {
   let s = 0;
   for (const [c, a, w] of terms) { const u = (l - c) / w; s += a * Math.exp(-u * u); }
   return s * 1e-24;
 }
-const sigA = l => gsum(ABS_TERMS, l);
-const sigE = l => gsum(EMI_TERMS, l);
+function xsFromTerms(abs, emi) {
+  const a = new Float64Array(XS_N), e = new Float64Array(XS_N);
+  for (let i = 0; i < XS_N; i++) { const l = XS_L0 + i * XS_DL; a[i] = gsum(abs, l); e[i] = gsum(emi, l); }
+  return { a, e };
+}
+// pts: [[lambda_nm, sigma_m2], ...] sorted by wavelength
+function resample(pts) {
+  const out = new Float64Array(XS_N);
+  if (!pts || pts.length < 2) return out;
+  let j = 0;
+  for (let i = 0; i < XS_N; i++) {
+    const l = XS_L0 + i * XS_DL;
+    if (l < pts[0][0] || l > pts[pts.length - 1][0]) continue;
+    while (j < pts.length - 2 && pts[j + 1][0] < l) j++;
+    const [l0, s0] = pts[j], [l1, s1] = pts[j + 1];
+    out[i] = Math.max(0, l1 === l0 ? s0 : s0 + (s1 - s0) * (l - l0) / (l1 - l0));
+  }
+  return out;
+}
+const xsFromPoints = (absPts, emiPts) => ({ a: resample(absPts), e: resample(emiPts) });
+let XS = xsFromTerms(XS_SETS.al.abs, XS_SETS.al.emi);
+const setXS = (t) => { if (t && t.a && t.e) XS = t; };
+function interpXS(arr, l) {
+  const x = (l - XS_L0) / XS_DL;
+  if (!(x >= 0 && x <= XS_N - 1)) return 0;
+  const i = Math.floor(x), f = x - i;
+  return i >= XS_N - 1 ? arr[i] : arr[i] * (1 - f) + arr[i + 1] * f;
+}
+const sigA = l => interpXS(XS.a, l);
+const sigE = l => interpXS(XS.e, l);
 
 /* Fundamental-mode overlap with a uniformly doped core (Marcuse Gaussian approximation) */
 function modeInfo(coreDiam_um, NA, lambda_nm) {
@@ -300,6 +406,7 @@ function modeInfo(coreDiam_um, NA, lambda_nm) {
 }
 
 function simulate(p) {
+  if (p.xs) setXS(p.xs);
   const L = p.L, M = p.nz;
   const dz = L / M;
   const a = p.coreD * 1e-6 / 2;
@@ -430,7 +537,14 @@ function simulate(p) {
   const sumDir = (kind, idx) => ch.filter(c => c.kind === kind).reduce((s, c) => s + c.P[idx], 0);
   const aseF = new Float64Array(M + 1), aseB = new Float64Array(M + 1);
   for (let i = 0; i <= M; i++) { aseF[i] = sumDir('af', i); aseB[i] = sumDir('ab', i); }
+  // net small-signal gain spectrum through the fiber for the converged inversion (dB)
+  const gainSpec = ch.filter(c => c.kind === 'af').map(c => {
+    let s = 0;
+    for (let i = 0; i <= M; i++) { const g = c.gt * n2[i] - c.ga - alphaBg; s += (i === 0 || i === M) ? 0.5 * g : g; }
+    return 10 / Math.LN10 * s * dz;
+  });
   return {
+    gainSpec, sigHnuA: ch[0].hnuA, sigWa: ch[0].wa, sigWe: ch[0].we, pumpWa: ch[1].wa, pumpWe: ch[1].we, tau,
     z, n2, heat, aseF, aseB, aseL, converged, iters: Math.min(it, p.maxIter), err,
     sig: ch[0].P, pf: ch[1].P, pb: ch[2].P,
     specF: ch.filter(c => c.kind === 'af').map(c => c.P[M]),
@@ -445,35 +559,51 @@ function simulate(p) {
 }
 
 
-/* worker entry: the same source runs on the page (for cross-sections) and inside a blob Worker */
-function sweepParams(base, v, x) {
-  const p = Object.assign({}, base);
-  if (v === 'pump') {
-    const tot = base.Ppf + base.Ppb;
-    const ff = tot > 0 ? base.Ppf / tot : 1;
-    p.Ppf = x * ff; p.Ppb = x * (1 - ff);
-  } else if (v === 'L') p.L = x;
-  else if (v === 'seed') p.PsIn_mW = x;
-  else if (v === 'ls') p.ls = x;
-  else if (v === 'lp') p.lp = x;
-  return p;
+/* scalar figures of merit for one run (all powers in W) */
+function summarize(r, p) {
+  const o = r.out, M = r.z.length - 1, dz = r.z[1] - r.z[0];
+  const launched = p.Ppf + p.Ppb;
+  let hmax = -Infinity, hz = 0, nsum = 0;
+  for (let i = 0; i <= M; i++) { if (r.heat[i] > hmax) { hmax = r.heat[i]; hz = r.z[i]; } nsum += r.n2[i]; }
+  // ASE density at the signal wavelength -> OSNR in 0.1 nm
+  let k = 0; for (let i = 1; i < r.aseL.length; i++) if (Math.abs(r.aseL[i] - p.ls) < Math.abs(r.aseL[k] - p.ls)) k = i;
+  const aseAtSig = r.specF[k] / p.aseRes * 0.1;
+  const mi = modeInfo(p.coreD, p.NA, p.ls);
+  const aeff = Math.PI * mi.w * mi.w;
+  let ps = 0; for (let i = 0; i <= M; i++) ps += (i === 0 || i === M ? 0.5 : 1) * r.sig[i];
+  const leff = o.sig > 0 ? ps * dz / o.sig : NaN;
+  const srsTh = 16 * aeff / (1e-13 * leff);
+  const sbsTh = 21 * aeff / (5e-11 * leff);
+  // saturation power at the fiber input (uses doped-core area and overlap through the rate coefficients)
+  const psatS = 1 / ((r.sigWa + r.sigWe) * r.tau);
+  const psatP = 1 / ((r.pumpWa + r.pumpWe) * r.tau);
+  const esatS = psatS * r.tau;
+  const hnuS = r.sigHnuA / r.Acore;
+  let n2int = 0; for (let i = 0; i <= M; i++) n2int += (i === 0 || i === M ? 0.5 : 1) * r.n2[i];
+  const eStored = n2int * dz * r.N * r.Acore * hnuS;
+  const gNep = Math.log(o.sig / o.sigIn);
+  return {
+    sig: o.sig, sigIn: o.sigIn, gainDB: 10 * Math.log10(o.sig / o.sigIn), pump: launched,
+    eff: launched > 0 ? (o.sig - o.sigIn) / launched * 100 : NaN,
+    pumpRes: o.pumpRes, aseF: o.aseF, aseB: o.aseB,
+    osnr: 10 * Math.log10(o.sig / Math.max(aseAtSig, 1e-18)),
+    heatMax: hmax, heatZ: hz, nAvg: nsum / (M + 1) * 100,
+    aeff, leff, srsTh, sbsTh, srsRatio: o.sig / srsTh * 100,
+    psatS, psatP, esatS, eStored, eExtract: gNep > 0 ? esatS * gNep : 0,
+    conv: r.converged,
+  };
 }
+
+/* worker entry: the same source runs on the page (for cross-sections) and inside blob Workers */
 if (typeof window === 'undefined' && typeof self !== 'undefined' && typeof importScripts === 'function') {
   self.onmessage = (e) => {
     const m = e.data;
     if (m.type === 'run') {
       const r = simulate(m.params);
-      self.postMessage({ type: 'result', id: m.id, r });
-    } else if (m.type === 'sweep') {
-      const pts = [];
-      m.xs.forEach((x, i) => {
-        const p = sweepParams(m.params, m.v, x);
-        const r = simulate(p);
-        const pt = { x, sig: r.out.sig, sigIn: r.out.sigIn, pump: p.Ppf + p.Ppb, pumpRes: r.out.pumpRes, aseF: r.out.aseF, aseB: r.out.aseB, conv: r.converged };
-        pts.push(pt);
-        self.postMessage({ type: 'sweep-progress', id: m.id, i, n: m.xs.length, pt });
-      });
-      self.postMessage({ type: 'sweep-done', id: m.id, pts });
+      self.postMessage({ type: 'result', id: m.id, r, s: summarize(r, m.params) });
+    } else if (m.type === 'sum') {
+      const r = simulate(m.params);
+      self.postMessage({ type: 'sum', id: m.id, idx: m.idx, s: summarize(r, m.params) });
     }
   };
 }
@@ -487,6 +617,8 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 /* ---------- parameters ---------- */
 const DEF = [
   { g: 'ファイバー', sw: '--inv', items: [
+    { id: 'fiber', label: '品種', type: 'select', options: [] },
+    { id: 'fiberHint', type: 'hint' },
     { id: 'L', label: 'ファイバー長', unit: 'm', min: 0.1, max: 30, step: 0.05 },
     { id: 'coreD', label: 'コア径', unit: 'µm', min: 2, max: 50, step: 0.5 },
     { id: 'NA', label: 'コア NA', unit: '', min: 0.03, max: 0.25, step: 0.001 },
@@ -496,6 +628,7 @@ const DEF = [
     { id: 'absL', label: '吸収の基準波長', type: 'select', options: [['915', '915 nm'], ['920', '920 nm'], ['940', '940 nm'], ['976', '976 nm']], show: () => P.absMode !== 'conc' },
     { id: 'N', label: 'Yb 濃度', unit: '10²⁵/m³', min: 0.5, max: 30, step: 0.1, show: () => P.absMode === 'conc' },
     { id: 'absHint', type: 'hint' },
+    { id: 'comp', label: 'ガラス組成', type: 'select', options: [['al', 'アルミノシリケート'], ['ge', 'ゲルマノシリケート'], ['p', 'リン酸シリケート'], ['user', '読み込んだ実測データ']] },
     { id: 'tau', label: '上準位寿命', unit: 'ms', min: 0.5, max: 1.5, step: 0.01 },
     { id: 'lossDBkm', label: '背景損失', unit: 'dB/km', min: 0, max: 200, step: 1 },
   ]},
@@ -528,19 +661,47 @@ const ABS_HINT = {
   core: 'スペックシートの「コア吸収」をそのまま入れてください。基本モードとドープ領域の重なり Γ を考慮して Yb 濃度に換算します。',
   conc: 'コア内の Yb イオン数密度を直接指定します。',
 };
+/* typical fiber types (representative values, not a specific product) */
+const FIBERS = [
+  { g: 'コア励起 (シングルモード)', items: [
+    { id: 'sm4', name: '4/125 高濃度 NA 0.20', p: { coreD: 4, NA: 0.20, cladD: 125, absMode: 'core', absDB: 1200, absL: '976', comp: 'al' } },
+    { id: 'sm6', name: '6/125 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', comp: 'al' } },
+    { id: 'sm6p', name: '6/125 リン酸系 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 120, absL: '976', comp: 'p' } },
+  ]},
+  { g: 'ダブルクラッド', items: [
+    { id: 'dc6', name: '6/125 NA 0.12', p: { coreD: 6, NA: 0.12, cladD: 125, absMode: 'clad', absDB: 0.6, absL: '915', comp: 'al' } },
+    { id: 'lma10', name: '10/125 LMA NA 0.075', p: { coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al' } },
+    { id: 'lma10p', name: '10/125 リン酸系 NA 0.075', p: { coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 2.5, absL: '976', comp: 'p' } },
+    { id: 'lma15', name: '15/130 LMA NA 0.08', p: { coreD: 15, NA: 0.08, cladD: 130, absMode: 'clad', absDB: 3.0, absL: '915', comp: 'al' } },
+  ]},
+  { g: '高出力 LMA', items: [
+    { id: 'lma20', name: '20/400 NA 0.065', p: { coreD: 20, NA: 0.065, cladD: 400, absMode: 'clad', absDB: 0.4, absL: '915', comp: 'al' } },
+    { id: 'lma25', name: '25/250 NA 0.065', p: { coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', comp: 'al' } },
+    { id: 'lma25b', name: '25/400 NA 0.065', p: { coreD: 25, NA: 0.065, cladD: 400, absMode: 'clad', absDB: 0.9, absL: '915', comp: 'al' } },
+    { id: 'lma30', name: '30/250 NA 0.06', p: { coreD: 30, NA: 0.06, cladD: 250, absMode: 'clad', absDB: 2.8, absL: '915', comp: 'al' } },
+    { id: 'lma30b', name: '30/400 NA 0.06', p: { coreD: 30, NA: 0.06, cladD: 400, absMode: 'clad', absDB: 1.1, absL: '915', comp: 'al' } },
+  ]},
+  { g: 'ロッド・PCF', items: [
+    { id: 'rod40', name: '40/200 ロッド型 NA 0.03', p: { coreD: 40, NA: 0.03, cladD: 200, absMode: 'clad', absDB: 10, absL: '976', comp: 'al' } },
+  ]},
+];
+const FIBER_LIST = FIBERS.flatMap(g => g.items);
+const matchFiber = () => (FIBER_LIST.find(f => Object.keys(f.p).every(k => f.p[k] === P[k])) || { id: 'custom' }).id;
+DEF[0].items[0].html = `<optgroup label="—"><option value="custom">カスタム（手入力）</option></optgroup>` + FIBERS.map(g => `<optgroup label="${g.g}">${g.items.map(f => `<option value="${f.id}">${f.name}</option>`).join('')}</optgroup>`).join('');
+
 const FIXED = { maxIter: 400, tol: 1e-6, lf: 1005 };
 const NUMERICS = { nz: 200, aseRes: 2, aseMin: 970, aseMax: 1150 };
 
 const PRESETS = [
-  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
-  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
-  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
-  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
+  { id: 'lma10', name: '10/125 クラッド励起 (976 nm 前方)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 10, Ppb: 0, ls: 1064, PsIn_mW: 100 } },
+  { id: 'core6', name: '6/125 コア励起プリアンプ', p: { L: 1, coreD: 6, NA: 0.12, cladD: 125, absMode: 'core', absDB: 250, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 20, pumpMode: 'core', lp: 976, Ppf: 0.5, Ppb: 0, ls: 1030, PsIn_mW: 1 } },
+  { id: 'hp25', name: '25/250 高出力 (915 nm 後方)', p: { L: 8, coreD: 25, NA: 0.065, cladD: 250, absMode: 'clad', absDB: 2.4, absL: '915', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 915, Ppf: 0, Ppb: 200, ls: 1064, PsIn_mW: 5000 } },
+  { id: 'aseheavy', name: '低シード 1 µW (ASE が支配的)', p: { L: 3, coreD: 10, NA: 0.075, cladD: 125, absMode: 'clad', absDB: 4.8, absL: '976', comp: 'al', tau: 0.84, lossDBkm: 15, pumpMode: 'clad', lp: 976, Ppf: 30, Ppb: 0, ls: 1030, PsIn_mW: 0.001 } },
 ];
 const PUMP_MAX = { clad: 500, core: 20 };
 
 let P = Object.assign({ N: 6.6 }, PRESETS[0].p, NUMERICS);
-const STORE_KEY = 'ybamp-params-v2';
+const STORE_KEY = 'ybamp-params-v3';
 try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (s && typeof s === 'object') for (const k of Object.keys(P)) if (k in s) P[k] = s[k]; } catch (e) {}
 
 const decimals = (step) => { const s = String(step); return s.includes('.') ? s.split('.')[1].length : 0; };
@@ -563,7 +724,7 @@ const fmtIn = (d, v) => d.scale === 'log' ? String(+v.toPrecision(4)) : (+v).toF
 function rowHTML(d) {
   if (d.type === 'hint') return `<p class="hint" id="${d.id}"></p>`;
   if (d.type === 'select') {
-    return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
+    return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}">${d.label}</label><select id="p-${d.id}">${d.html || d.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`;
   }
   return `<div class="prm" id="row-${d.id}"><label for="p-${d.id}" id="lb-${d.id}">${d.label}</label><div class="num"><input id="p-${d.id}" type="number" step="any" min="${d.min}" max="${d.max}" inputmode="decimal"><span class="u">${d.unit}</span></div><input id="r-${d.id}" type="range" min="0" max="1000" step="1" aria-label="${d.label}"></div>`;
 }
@@ -575,6 +736,7 @@ rack.innerHTML = DEF.map(g => `<div class="grp"><h2><span class="sw" style="back
 function syncInputs() {
   for (const d of ALL) {
     const el = $('#p-' + d.id);
+    if (d.id === 'fiber') { el.value = matchFiber(); continue; }
     if (d.type === 'select') { el.value = P[d.id]; continue; }
     el.value = fmtIn(d, P[d.id]);
     $('#r-' + d.id).value = Math.round(toT(d, P[d.id]) * 1000);
@@ -582,6 +744,7 @@ function syncInputs() {
   for (const d of ALL) if (d.show) $('#row-' + d.id).hidden = !d.show();
   $('#lb-absDB').textContent = P.absMode === 'core' ? 'コア吸収' : 'クラッド吸収';
   $('#absHint').textContent = ABS_HINT[P.absMode] || '';
+  $('#fiberHint').textContent = matchFiber() === 'custom' ? '一覧の品種を選ぶと、形状と吸収スペックがまとめて入ります。' : '代表的な値です。実際の品番はスペックシートの値で上書きしてください。';
 }
 function applyPumpRange() {
   const mx = PUMP_MAX[P.pumpMode] || 500;
@@ -589,6 +752,15 @@ function applyPumpRange() {
 }
 function onParam(id, v, src) {
   const d = ALL.find(x => x.id === id);
+  if (id === 'fiber') {
+    const f = FIBER_LIST.find(x => x.id === v);
+    if (f) { Object.assign(P, f.p); applyXS(); P.N = P.absMode === 'conc' ? P.N : effN(); }
+    syncInputs(); $('#preset').value = matchPreset(); persist(); updateDerived(); drawXS(); schedule();
+    return;
+  }
+  if (id === 'comp' && v === 'user' && !USER_XS) {
+    toast('先に断面積カードで実測データを読み込んでください'); syncInputs(); return;
+  }
   if (d.type !== 'select') {
     if (!isFinite(v)) return;
     v = clamp(v, d.min, d.max);
@@ -600,16 +772,17 @@ function onParam(id, v, src) {
     if (P.absMode === 'conc') P.N = +clamp(n0, 0.5, 30).toFixed(1);
     else P.absDB = +absFromN(P.absMode, +P.absL, n0).toPrecision(3);
   } else P[id] = v;
+  if (id === 'comp') applyXS();
   if (P.absMode !== 'conc') P.N = effN();
   if (id === 'pumpMode') { applyPumpRange(); }
   if (id === 'aseMin' || id === 'aseMax') { if (P.aseMax - P.aseMin < 10) P.aseMax = P.aseMin + 10; }
   if (src !== 'num' || d.type === 'select') syncInputs();
-  else $('#r-' + id).value = Math.round(toT(d, v) * 1000);
+  else { $('#r-' + id).value = Math.round(toT(d, v) * 1000); $('#p-fiber').value = matchFiber(); $('#fiberHint').textContent = matchFiber() === 'custom' ? '一覧の品種を選ぶと、形状と吸収スペックがまとめて入ります。' : '代表的な値です。実際の品番はスペックシートの値で上書きしてください。'; }
   $('#preset').value = matchPreset();
   persist();
   updateDerived();
   schedule();
-  if (id === 'pumpMode' || id === 'lp' || id === 'ls') drawXS();
+  if (id === 'pumpMode' || id === 'lp' || id === 'ls' || id === 'comp') drawXS();
 }
 for (const d of ALL) {
   const el = $('#p-' + d.id);
@@ -630,11 +803,64 @@ function matchPreset() {
 function loadPreset(id) {
   const pr = PRESETS.find(p => p.id === id); if (!pr) return;
   Object.assign(P, pr.p);
+  applyXS();
   if (P.absMode !== 'conc') P.N = effN();
-  applyPumpRange(); syncInputs(); presetSel.value = id; persist(); updateDerived(); drawXS(); schedule(); resetSweepRange();
+  applyPumpRange(); syncInputs(); presetSel.value = id; persist(); updateDerived(); drawXS(); schedule(); resetSweepRange(); resetMapRange();
 }
 presetSel.addEventListener('change', () => { if (presetSel.value !== 'custom') loadPreset(presetSel.value); });
 $('#reset').addEventListener('click', () => { Object.assign(P, NUMERICS); loadPreset(PRESETS[0].id); });
+
+/* ---------- cross-section tables ---------- */
+const BUILTIN_XS = {};
+for (const k of Object.keys(XS_SETS)) BUILTIN_XS[k] = xsFromTerms(XS_SETS[k].abs, XS_SETS[k].emi);
+let USER_XS = null, USER_XS_INFO = '';
+const USER_KEY = 'ybamp-userxs-v1';
+const currentXS = () => (P.comp === 'user' && USER_XS) ? USER_XS : (BUILTIN_XS[P.comp] || BUILTIN_XS.al);
+function applyXS() { if (P.comp === 'user' && !USER_XS) P.comp = 'al'; setXS(currentXS()); }
+
+function parseTable(txt) {
+  const rows = [];
+  for (const line of String(txt).split(/\r?\n/)) {
+    const t = line.trim(); if (!t || /^[#%;/]/.test(t)) continue;
+    const cols = t.split(/[\s,;\t]+/).map(Number);
+    if (cols.length >= 2 && cols.every(isFinite)) rows.push(cols);
+  }
+  return rows;
+}
+function normWl(rows) {
+  const mx = Math.max(...rows.map(r => r[0]));
+  const f = mx < 1e-4 ? 1e9 : mx < 10 ? 1000 : 1; // m, µm or nm
+  return { f, unit: f === 1e9 ? 'm' : f === 1000 ? 'µm' : 'nm' };
+}
+function normXs(vals) {
+  const mx = Math.max(...vals.map(Math.abs));
+  if (mx < 1e-21) return { f: 1, unit: 'm²' };
+  if (mx < 1e-15) return { f: 1e-4, unit: 'cm²' };
+  return { f: 1e-24, unit: '10⁻²⁴ m²' };
+}
+function buildPts(rows, col) {
+  const w = normWl(rows), x = normXs(rows.map(r => r[col]));
+  const pts = rows.map(r => [r[0] * w.f, r[col] * x.f]).sort((a, b) => a[0] - b[0]);
+  const out = []; for (const q of pts) if (!out.length || q[0] > out[out.length - 1][0]) out.push(q);
+  return { pts: out, wu: w.unit, xu: x.unit };
+}
+function importXS(aTxt, eTxt, quiet) {
+  const ra = parseTable(aTxt), re = parseTable(eTxt);
+  let A, E;
+  if (ra.length && ra[0].length >= 3 && !re.length) { A = buildPts(ra, 1); E = buildPts(ra, 2); }
+  else { if (ra.length) A = buildPts(ra, 1); if (re.length) E = buildPts(re, 1); }
+  if (!A || !E || A.pts.length < 5 || E.pts.length < 5) throw new Error('吸収と放出の両方に、数値の行が 5 行以上必要です。');
+  const span = (q) => `${q.pts[0][0].toFixed(0)}–${q.pts[q.pts.length - 1][0].toFixed(0)} nm`;
+  if (A.pts[0][0] > 980 || A.pts[A.pts.length - 1][0] < 970) throw new Error('吸収データが 976 nm を含んでいません（範囲 ' + span(A) + '）。');
+  const t = xsFromPoints(A.pts, E.pts);
+  USER_XS = t;
+  const prev = XS; setXS(t);
+  USER_XS_INFO = `吸収 ${A.pts.length} 点 (${span(A)}, ${A.xu})、放出 ${E.pts.length} 点 (${span(E)}, ${E.xu})\nσa(976) = ${(sigA(976) * 1e24).toFixed(2)}、σe(1030) = ${(sigE(1030) * 1e24).toFixed(2)} ×10⁻²⁴ m²`;
+  setXS(prev);
+  if (!quiet) { try { localStorage.setItem(USER_KEY, JSON.stringify({ a: aTxt, e: eTxt })); } catch (e2) {} }
+  return USER_XS_INFO;
+}
+try { const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null'); if (u) { importXS(u.a, u.e, true); } } catch (e) { USER_XS = null; }
 
 /* ---------- formatting ---------- */
 function fmtW(w) {
@@ -645,6 +871,7 @@ function fmtW(w) {
   const u = w * 1e6; return [Math.abs(u) >= 100 ? u.toFixed(1) : Math.abs(u) >= 10 ? u.toFixed(2) : u.toFixed(3), 'µW'];
 }
 const fmtWs = (w) => fmtW(w).join(' ');
+const fmtJ = (j) => { const a = Math.abs(j); return a >= 1 ? j.toFixed(2) + ' J' : a >= 1e-3 ? (j * 1e3).toFixed(2) + ' mJ' : (j * 1e6).toFixed(1) + ' µJ'; };
 const dB = (x) => 10 * Math.log10(x);
 const dBm = (w) => 10 * Math.log10(Math.max(w, 1e-15) / 1e-3);
 
@@ -798,7 +1025,7 @@ class Chart {
     for (const mk of (cfg.marks || [])) {
       const c = cssVar(mk.color); ctx.strokeStyle = c; ctx.fillStyle = cssVar('--panel'); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(X(mk.x), Y(mk.y), 4.5, 0, 7); ctx.fill(); ctx.stroke();
-      if (mk.label) { ctx.fillStyle = c; ctx.font = `11px ${mono}`; ctx.textAlign = X(mk.x) > L + pw / 2 ? 'right' : 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(mk.label, X(mk.x) + (ctx.textAlign === 'right' ? -8 : 8), Y(mk.y) - 6); }
+      if (mk.label) { ctx.fillStyle = c; ctx.font = `11px ${mono}`; ctx.textAlign = X(mk.x) > L + pw / 2 ? 'right' : 'left'; const below = Y(mk.y) - 20 < T; ctx.textBaseline = below ? 'top' : 'bottom'; ctx.fillText(mk.label, X(mk.x) + (ctx.textAlign === 'right' ? -8 : 8), Y(mk.y) + (below ? 8 : -6)); }
     }
     ctx.restore();
     // hover
@@ -832,8 +1059,8 @@ function nearest(xs, v) {
 }
 const CHARTS = [];
 const chPower = new Chart($('#c-power')), chInv = new Chart($('#c-inv')), chHeat = new Chart($('#c-heat')),
-  chSpec = new Chart($('#c-spec')), chXS = new Chart($('#c-xs')), chSweep = new Chart($('#c-sweep'));
-const redrawAll = () => { CHARTS.forEach(c => c.draw()); drawSchem(); };
+  chSpec = new Chart($('#c-spec')), chXS = new Chart($('#c-xs')), chSweep = new Chart($('#c-sweep')), chGain = new Chart($('#c-gain'));
+const redrawAll = () => { CHARTS.forEach(c => c.draw()); drawSchem(); if (typeof drawMap === 'function') drawMap(); };
 if ('ResizeObserver' in window) new ResizeObserver(() => redrawAll()).observe(document.body); else window.addEventListener('resize', redrawAll);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', redrawAll);
 new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -848,6 +1075,7 @@ function drawXS() {
     series: [{ x: xs, y: a, color: '--pump', label: '吸収 σa' }, { x: xs, y: e, color: '--sig', label: '放出 σe' }],
     vlines: [{ x: P.lp, color: '--pump', label: `励起 ${P.lp}` }, { x: P.ls, color: '--sig', label: `信号 ${P.ls}` }],
   });
+  $('#xs-sub').textContent = P.comp === 'user' ? '読み込んだ実測データ' : `${XS_SETS[P.comp].name}の代表的な形（近似）`;
 }
 
 /* ---------- schematic ---------- */
@@ -931,9 +1159,11 @@ function makeWorker() {
 }
 worker = makeWorker();
 let busy = false, pending = false, runId = 0;
-function params() { return Object.assign({}, P, FIXED, { N: effN() }); }
+function params() { return Object.assign({}, P, FIXED, { N: effN(), xs: currentXS() }); }
+function paramsWith(over) { const save = P; P = Object.assign({}, P, over); const out = params(); P = save; return out; }
+let lastS = null;
 function schedule() {
-  if (!worker) { setTimeout(() => { last = simulate(params()); render(); }, 0); return; }
+  if (!worker) { setTimeout(() => { const p = params(); last = simulate(p); lastS = summarize(last, p); render(); }, 0); return; }
   if (busy) { pending = true; return; }
   busy = true; pending = false;
   worker.postMessage({ type: 'run', id: ++runId, params: params() });
@@ -942,7 +1172,7 @@ if (worker) {
   worker.onmessage = (e) => {
     if (e.data.type !== 'result') return;
     busy = false;
-    last = e.data.r; render();
+    last = e.data.r; lastS = e.data.s; render();
     if (pending) schedule();
   };
   worker.onerror = () => { worker = null; busy = false; schedule(); };
@@ -980,8 +1210,53 @@ function render() {
   if (gain > 40) chips.push(['warn', `単段で ${gain.toFixed(0)} dB は寄生発振の危険あり`]);
   if (launched > 0 && o.pumpRes > 0.3 * launched) chips.push(['info', '励起の 30 % 超が未吸収。ファイバーを長くできます']);
   if (gain < 0 && launched > 0) chips.push(['warn', '信号が吸収されている。長すぎるか励起不足']);
+  const S = lastS;
+  if (S) {
+    if (S.srsRatio > 50) chips.push(['warn', `出力が SRS しきい値の目安の ${S.srsRatio.toFixed(0)} %。ラマン光が出るおそれ`]);
+    if (o.sig > S.sbsTh) chips.push(['info', `狭線幅の信号なら SBS しきい値の目安 ${fmtWs(S.sbsTh)} を超えます`]);
+  }
+  if (P.comp === 'user') chips.push(['info', '実測の断面積データで計算中']);
   $('#status').innerHTML = chips.map(([c, t]) => `<span class="chip ${c}">${t}</span>`).join('');
   $('#schem-sub').textContent = `平均反転 ${(navg * 100).toFixed(1)} %、最大 ${(nmax * 100).toFixed(1)} %`;
+
+  // detail figures
+  const gs = r.gainSpec;
+  let gk = 0; gs.forEach((g, i) => { if (g > gs[gk]) gk = i; });
+  const gPeak = gs[gk], lPeak = r.aseL[gk];
+  let lo = gk, hi = gk;
+  while (lo > 0 && gs[lo - 1] >= gPeak - 3) lo--;
+  while (hi < gs.length - 1 && gs[hi + 1] >= gPeak - 3) hi++;
+  const bw3 = r.aseL[hi] - r.aseL[lo];
+  if (S) {
+    const det = [
+      ['利得ピーク', `${lPeak.toFixed(0)} nm`, `${gPeak.toFixed(1)} dB`],
+      ['3 dB 利得帯域', `${bw3.toFixed(0)} nm`, `${r.aseL[lo].toFixed(0)}–${r.aseL[hi].toFixed(0)}`],
+      ['OSNR (0.1 nm)', `${isFinite(S.osnr) ? S.osnr.toFixed(1) : '—'} dB`, '出力端'],
+      ['平均反転 N₂/N', `${S.nAvg.toFixed(1)} %`, `最大 ${(nmax * 100).toFixed(1)} %`],
+      ['飽和パワー (信号)', fmtWs(S.psatS), `${P.ls} nm`],
+      ['飽和パワー (励起)', fmtWs(S.psatP), `${P.lp} nm`],
+      ['飽和エネルギー (信号)', fmtJ(S.esatS), ''],
+      ['上準位の蓄積エネルギー', fmtJ(S.eStored), '全長'],
+      ['取り出し可能エネルギー', fmtJ(S.eExtract), 'Esat·lnG'],
+      ['実効モード面積 Aeff', `${(S.aeff * 1e12).toFixed(0)} µm²`, `MFD ${(ms.mfd * 1e6).toFixed(1)} µm`],
+      ['実効長 Leff', `${S.leff.toFixed(2)} m`, `全長 ${P.L} m`],
+      ['SRS しきい値の目安', fmtWs(S.srsTh), `出力は ${S.srsRatio < 0.1 ? S.srsRatio.toExponential(1) : S.srsRatio.toFixed(1)} %`],
+      ['SBS しきい値の目安', fmtWs(S.sbsTh), '狭線幅時'],
+      ['吸収された励起', fmtWs(absorbed), launched > 0 ? `${(absorbed / launched * 100).toFixed(1)} %` : ''],
+      ['入力 / 飽和パワー', `${(o.sigIn / S.psatS).toPrecision(3)}`, o.sigIn > S.psatS ? '飽和入力' : '小信号入力'],
+      ['量子限界の効率', `${(P.lp / P.ls * 100).toFixed(1)} %`, `${P.lp}→${P.ls} nm`],
+    ];
+    $('#detail').innerHTML = det.map(([k, v, n]) => `<div><dt>${k}</dt><dd>${v}${n ? `<small>${n}</small>` : ''}</dd></div>`).join('');
+  }
+  $('#gain-sub').textContent = `ピーク ${lPeak.toFixed(0)} nm で ${gPeak.toFixed(1)} dB、3 dB 帯域 ${bw3.toFixed(0)} nm`;
+  const gmin = Math.min(...gs);
+  chGain.set({
+    x: { min: P.aseMin, max: P.aseMax, label: '波長 (nm)', unit: 'nm', fmt: v => v.toFixed(1) },
+    y: { min: Math.floor((Math.max(gmin, gPeak - 60) - 2) / 10) * 10, max: Math.ceil((gPeak + 4) / 10) * 10, label: '正味の利得 (dB)', fmt: v => v.toFixed(2) + ' dB' },
+    series: [{ x: r.aseL, y: gs, color: '--sig', label: '小信号利得（現在の反転分布）', fill: false, w: 2 }],
+    hlines: [{ y: 0, color: '--muted', label: '0 dB' }],
+    vlines: [{ x: P.ls, color: '--sig', label: `信号 ${P.ls}` }],
+  });
 
   // power chart
   const z = Array.from(r.z);
@@ -1055,107 +1330,350 @@ $('#copy-z').addEventListener('click', () => {
   copyText(rows.join('\n'), `${r.z.length} 行をコピーしました`);
 });
 
-/* ---------- sweep ---------- */
-const SW = {
-  pump: { unit: 'W', label: '励起パワー合計 (W)', range: () => [0, Math.max(1, +(2 * (P.Ppf + P.Ppb)).toPrecision(3))], log: false },
-  L: { unit: 'm', label: 'ファイバー長 (m)', range: () => [0.1, +(Math.max(1, 3 * P.L)).toPrecision(3)], log: false },
-  seed: { unit: 'mW', label: '信号入力 (mW, 対数)', range: () => [0.001, 1000], log: true },
-  ls: { unit: 'nm', label: '信号波長 (nm)', range: () => [1010, 1110], log: false },
-  lp: { unit: 'nm', label: '励起波長 (nm)', range: () => [905, 985], log: false },
-};
-const swVar = $('#sw-var');
-function resetSweepRange() {
-  const s = SW[swVar.value]; const [a, b] = s.range();
-  $('#sw-from').value = a; $('#sw-to').value = b;
-  $('#sw-u1').textContent = `(${s.unit})`; $('#sw-u2').textContent = `(${s.unit})`;
-}
-swVar.addEventListener('change', resetSweepRange);
-let sweepId = 0, sweepPts = [], sweepMeta = null;
-$('#sw-run').addEventListener('click', () => {
-  const v = swVar.value, s = SW[v];
-  let a = parseFloat($('#sw-from').value), b = parseFloat($('#sw-to').value);
-  const n = clamp(Math.round(parseFloat($('#sw-n').value) || 21), 3, 80);
-  $('#sw-n').value = n;
-  if (!isFinite(a) || !isFinite(b) || a === b) { toast('開始と終了に異なる数値を入れてください'); return; }
-  if (v === 'L') { a = Math.max(0.05, a); b = Math.max(0.05, b); }
-  if (s.log) { a = Math.max(1e-6, a); b = Math.max(1e-6, b); }
-  if (v === 'pump') { a = Math.max(0, a); b = Math.max(0, b); }
-  const xs = [];
-  for (let i = 0; i < n; i++) { const t = i / (n - 1); xs.push(s.log ? a * Math.pow(b / a, t) : a + (b - a) * t); }
-  if (sweepWorker) sweepWorker.terminate();
-  sweepWorker = makeWorker();
-  sweepPts = []; sweepMeta = { v, base: params(), xs };
-  const id = ++sweepId;
-  $('#sw-run').textContent = '計算中…'; $('#sw-run').disabled = true; $('#sw-copy').disabled = true;
-  $('#sw-prog').style.width = '0%';
-  const done = () => { $('#sw-run').textContent = '掃引を実行'; $('#sw-run').disabled = false; $('#sw-copy').disabled = !sweepPts.length; $('#sw-prog').style.width = '100%'; renderSweep(true); };
-  if (!sweepWorker) {
-    // fallback: main thread, chunked
-    let i = 0;
-    const stepF = () => {
-      if (id !== sweepId) return;
-      const p = sweepParams(sweepMeta.base, v, xs[i]); const r = simulate(p);
-      sweepPts.push({ x: xs[i], sig: r.out.sig, sigIn: r.out.sigIn, pump: p.Ppf + p.Ppb, pumpRes: r.out.pumpRes, aseF: r.out.aseF, aseB: r.out.aseB, conv: r.converged });
-      i++; $('#sw-prog').style.width = (i / xs.length * 100) + '%'; renderSweep(false);
-      if (i < xs.length) setTimeout(stepF, 0); else done();
+/* ---------- worker pool for sweeps and maps ---------- */
+const POOL_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+function runBatch(list, onEach) {
+  let next = 0, done = 0, cancelled = false, resolveF;
+  const ws = [];
+  const promise = new Promise(res => { resolveF = res; });
+  const finish = (ok) => { ws.forEach(w => w.terminate()); resolveF(ok); };
+  const feed = (w) => { if (next < list.length) { w.postMessage({ type: 'sum', id: 0, idx: next, params: list[next] }); next++; } };
+  for (let i = 0; i < Math.min(POOL_N, list.length); i++) {
+    const w = makeWorker(); if (!w) break;
+    ws.push(w);
+    w.onmessage = (e) => {
+      if (cancelled) return;
+      onEach(e.data.idx, e.data.s); done++;
+      if (done === list.length) finish(true); else feed(w);
     };
-    setTimeout(stepF, 0); return;
+    w.onerror = () => { if (!cancelled) { cancelled = true; finish(false); } };
+    feed(w);
   }
-  sweepWorker.onmessage = (e) => {
-    const m = e.data; if (m.id !== id) return;
-    if (m.type === 'sweep-progress') { sweepPts.push(m.pt); $('#sw-prog').style.width = ((m.i + 1) / m.n * 100) + '%'; renderSweep(false); }
-    else if (m.type === 'sweep-done') done();
-  };
-  sweepWorker.postMessage({ type: 'sweep', id, params: sweepMeta.base, v, xs });
+  if (!ws.length) {
+    const step = () => {
+      if (cancelled) return;
+      const i = next++; onEach(i, summarize(simulate(list[i]), list[i])); done++;
+      if (done === list.length) { setXS(currentXS()); resolveF(true); } else setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  }
+  return { promise, cancel: () => { if (!cancelled) { cancelled = true; finish(false); } } };
+}
+
+/* ---------- sweep variables and metrics ---------- */
+const SW = {
+  pump: { label: '励起パワー合計', unit: 'W', range: () => [0, Math.max(1, +(2 * (P.Ppf + P.Ppb)).toPrecision(3))],
+    over: x => { const t = P.Ppf + P.Ppb, f = t > 0 ? P.Ppf / t : 1; return { Ppf: Math.max(0, x) * f, Ppb: Math.max(0, x) * (1 - f) }; } },
+  fwdFrac: { label: '前方励起の割合', unit: '%', range: () => [0, 100],
+    over: x => { const t = P.Ppf + P.Ppb, f = clamp(x, 0, 100) / 100; return { Ppf: t * f, Ppb: t * (1 - f) }; } },
+  L: { label: 'ファイバー長', unit: 'm', range: () => [0.2, +Math.max(1, 3 * P.L).toPrecision(3)], over: x => ({ L: Math.max(0.02, x) }) },
+  abs: { label: () => P.absMode === 'conc' ? 'Yb 濃度' : `${P.absMode === 'core' ? 'コア' : 'クラッド'}吸収@${P.absL}`,
+    unit: () => P.absMode === 'conc' ? '10²⁵/m³' : 'dB/m',
+    range: () => { const c = P.absMode === 'conc' ? P.N : P.absDB; return [+(c * 0.25).toPrecision(2), +(c * 3).toPrecision(2)]; },
+    over: x => P.absMode === 'conc' ? { N: Math.max(0.01, x) } : { absDB: Math.max(1e-3, x) } },
+  coreD: { label: 'コア径', unit: 'µm', range: () => [Math.max(2, Math.round(P.coreD * 0.5)), Math.round(P.coreD * 2)], over: x => ({ coreD: Math.max(1, x) }) },
+  seed: { label: '信号入力', unit: 'mW', log: true, range: () => [0.001, 1000], over: x => ({ PsIn_mW: Math.max(1e-7, x) }) },
+  ls: { label: '信号波長', unit: 'nm', range: () => [1010, 1110], over: x => ({ ls: x }) },
+  lp: { label: '励起波長', unit: 'nm', range: () => [905, 985], over: x => ({ lp: x }) },
+};
+const swL = v => typeof SW[v].label === 'function' ? SW[v].label() : SW[v].label;
+const swU = v => typeof SW[v].unit === 'function' ? SW[v].unit() : SW[v].unit;
+const fmtNum = v => isFinite(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toPrecision(4)).toString() : '—';
+const METRICS = [
+  { id: 'sig', label: '出力信号', unit: 'W', fmt: fmtWs, color: '--sig', best: 'max' },
+  { id: 'gainDB', label: '利得', unit: 'dB', fmt: v => v.toFixed(2) + ' dB', color: '--sig', best: 'max' },
+  { id: 'eff', label: '光-光変換効率', unit: '%', fmt: v => isFinite(v) ? v.toFixed(1) + ' %' : '—', color: '--sig', best: 'max' },
+  { id: 'pumpRes', label: '残留励起', unit: 'W', fmt: fmtWs, color: '--pump', best: 'min' },
+  { id: 'aseF', label: '前方 ASE', unit: 'W', fmt: fmtWs, color: '--asef', best: 'min' },
+  { id: 'aseB', label: '後方 ASE', unit: 'W', fmt: fmtWs, color: '--aseb', best: 'min' },
+  { id: 'osnr', label: 'OSNR (0.1 nm)', unit: 'dB', fmt: v => v.toFixed(1) + ' dB', color: '--asef', best: 'max' },
+  { id: 'heatMax', label: '最大熱負荷', unit: 'W/m', fmt: v => v.toFixed(2) + ' W/m', color: '--heat', best: 'min' },
+  { id: 'srsRatio', label: '出力 / SRS しきい値', unit: '%', fmt: v => (v < 0.1 ? v.toExponential(1) : v.toFixed(1)) + ' %', color: '--heat', best: 'min' },
+  { id: 'nAvg', label: '平均反転', unit: '%', fmt: v => v.toFixed(1) + ' %', color: '--inv', best: 'max' },
+];
+const MET = id => METRICS.find(m => m.id === id);
+const VAR_OPTS = Object.keys(SW).map(k => `<option value="${k}">${swL(k)}</option>`).join('');
+function refreshVarLabels() {
+  for (const sel of ['#sw-var', '#mx-var', '#my-var']) for (const o of $(sel).options) o.textContent = swL(o.value);
+}
+const linspace = (a, b, n, log) => Array.from({ length: n }, (_, i) => { const t = n > 1 ? i / (n - 1) : 0; return log ? a * Math.pow(b / a, t) : a + (b - a) * t; });
+function readRange(prefix, v, nMax) {
+  const s = SW[v];
+  let a = parseFloat($(`#${prefix}-from`).value), b = parseFloat($(`#${prefix}-to`).value);
+  const n = clamp(Math.round(parseFloat($(`#${prefix}-n`).value) || 21), 3, nMax);
+  $(`#${prefix}-n`).value = n;
+  if (!isFinite(a) || !isFinite(b) || a === b) return null;
+  if (s.log) { a = Math.max(1e-6, a); b = Math.max(1e-6, b); }
+  return linspace(a, b, n, s.log);
+}
+function setRange(prefix, v) {
+  const [a, b] = SW[v].range();
+  $(`#${prefix}-from`).value = a; $(`#${prefix}-to`).value = b;
+  $(`#${prefix}-u1`).textContent = `(${swU(v)})`; $(`#${prefix}-u2`).textContent = `(${swU(v)})`;
+}
+
+/* ---------- 1D sweep ---------- */
+const swVar = $('#sw-var'), swY = $('#sw-y');
+swVar.innerHTML = VAR_OPTS;
+swY.innerHTML = '<option value="powers">パワー（信号・励起・ASE）</option>' + METRICS.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+function resetSweepRange() { refreshVarLabels(); setRange('sw', swVar.value); }
+swVar.addEventListener('change', resetSweepRange);
+swY.addEventListener('change', () => renderSweep(true));
+let sweepJob = null, sweepPts = [], sweepMeta = null;
+$('#sw-run').addEventListener('click', async () => {
+  const v = swVar.value, xs = readRange('sw', v, 201);
+  if (!xs) { toast('開始と終了に異なる数値を入れてください'); return; }
+  if (sweepJob) sweepJob.cancel();
+  sweepMeta = { v, xs, label: swL(v), unit: swU(v), log: !!SW[v].log };
+  sweepPts = new Array(xs.length).fill(null);
+  const list = xs.map(x => paramsWith(SW[v].over(x)));
+  let n = 0;
+  $('#sw-run').textContent = '計算中…'; $('#sw-run').disabled = true; $('#sw-copy').disabled = true; $('#sw-prog').style.width = '0%';
+  const t0 = performance.now();
+  const job = runBatch(list, (i, s) => { sweepPts[i] = Object.assign({ x: xs[i] }, s); n++; $('#sw-prog').style.width = (n / xs.length * 100) + '%'; if (n % 4 === 0) renderSweep(false); });
+  sweepJob = job;
+  const ok = await job.promise;
+  if (sweepJob !== job) return;
+  sweepJob = null;
+  $('#sw-run').textContent = '掃引を実行'; $('#sw-run').disabled = false;
+  if (ok) { $('#sw-copy').disabled = false; sweepMeta.sec = (performance.now() - t0) / 1000; renderSweep(true); }
 });
 function renderSweep(final) {
-  if (!sweepMeta || !sweepPts.length) return;
-  const s = SW[sweepMeta.v];
-  const xs = sweepPts.map(p => s.log ? Math.log10(p.x) : p.x);
-  const xr = sweepMeta.xs.map(x => s.log ? Math.log10(x) : x);
-  const series = [
-    { x: xs, y: sweepPts.map(p => p.sig), color: '--sig', label: '出力信号', w: 2.4, dots: true },
-    { x: xs, y: sweepPts.map(p => p.pumpRes), color: '--pump', label: '残留励起', dots: true },
-    { x: xs, y: sweepPts.map(p => p.aseF), color: '--asef', label: '前方 ASE', dots: true },
-    { x: xs, y: sweepPts.map(p => p.aseB), color: '--aseb', label: '後方 ASE', dash: true, dots: true },
-  ];
+  if (!sweepMeta) return;
+  const pts = sweepPts.filter(Boolean); if (!pts.length) return;
+  const m = sweepMeta, tx = x => m.log ? Math.log10(x) : x;
+  const xs = pts.map(p => tx(p.x));
+  const yMode = swY.value;
+  let series, yCfg;
+  if (yMode === 'powers') {
+    series = [
+      { x: xs, y: pts.map(p => p.sig), color: '--sig', label: '出力信号', w: 2.4, dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.pumpRes), color: '--pump', label: '残留励起', dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.aseF), color: '--asef', label: '前方 ASE', dots: pts.length <= 60 },
+      { x: xs, y: pts.map(p => p.aseB), color: '--aseb', label: '後方 ASE', dash: true },
+    ];
+    yCfg = { label: 'パワー (W)', zero: true, fmt: fmtWs };
+  } else {
+    const me = MET(yMode);
+    series = [{ x: xs, y: pts.map(p => p[yMode]), color: me.color, label: me.label, w: 2.4, dots: pts.length <= 60, fill: true }];
+    yCfg = { label: `${me.label} (${me.unit})`, zero: me.unit === '%' || me.unit === 'W' || me.unit === 'W/m', fmt: me.fmt };
+  }
   const marks = [];
-  let sub = '';
-  if (final) {
-    let bi = 0; sweepPts.forEach((p, i) => { if (p.sig > sweepPts[bi].sig) bi = i; });
-    if (sweepMeta.v !== 'pump' && sweepMeta.v !== 'seed') {
-      marks.push({ x: xs[bi], y: sweepPts[bi].sig, color: '--sig', label: `最大 ${fmtWs(sweepPts[bi].sig)} @ ${+sweepPts[bi].x.toPrecision(4)} ${s.unit}` });
-      sub = `出力最大: ${+sweepPts[bi].x.toPrecision(4)} ${s.unit} で ${fmtWs(sweepPts[bi].sig)}`;
+  let sub = final ? '' : `計算中 ${pts.length} / ${m.xs.length}`;
+  if (final && pts.length === m.xs.length) {
+    const key = yMode === 'powers' ? 'sig' : yMode, me = MET(key);
+    let bi = 0; pts.forEach((p, i) => { const a = p[key], b = pts[bi][key]; if (isFinite(a) && (!isFinite(b) || (me.best === 'max' ? a > b : a < b))) bi = i; });
+    if (!(m.v === 'pump' && key === 'sig') && !(m.v === 'seed' && key === 'sig')) {
+      marks.push({ x: xs[bi], y: pts[bi][key], color: me.color, label: `${me.best === 'max' ? '最大' : '最小'} ${me.fmt(pts[bi][key])} @ ${fmtNum(pts[bi].x)} ${m.unit}` });
+      sub = `${me.label}が${me.best === 'max' ? '最大' : '最小'}: ${fmtNum(pts[bi].x)} ${m.unit} で ${me.fmt(pts[bi][key])}`;
     }
-    if (sweepMeta.v === 'pump' && sweepPts.length >= 4) {
-      const h = sweepPts.slice(Math.floor(sweepPts.length / 2));
+    if (m.v === 'pump' && pts.length >= 4) {
+      const h = pts.slice(Math.floor(pts.length / 2));
       const mx = h.reduce((a, p) => a + p.pump, 0) / h.length, my = h.reduce((a, p) => a + p.sig, 0) / h.length;
       let sxy = 0, sxx = 0; h.forEach(p => { sxy += (p.pump - mx) * (p.sig - my); sxx += (p.pump - mx) ** 2; });
-      const slope = sxx > 0 ? sxy / sxx : NaN; const th = isFinite(slope) && slope > 0 ? mx - my / slope : NaN;
+      const slope = sxx > 0 ? sxy / sxx : NaN, th = isFinite(slope) && slope > 0 ? mx - my / slope : NaN;
       sub = `スロープ効率 ${(slope * 100).toFixed(1)} %（後半の点で直線近似）` + (isFinite(th) && th > 0 ? `、外挿しきい値 ${fmtWs(th)}` : '');
     }
-    const nc = sweepPts.filter(p => !p.conv).length;
+    const nc = pts.filter(p => !p.conv).length;
     if (nc) sub += `　未収束 ${nc} 点`;
-    $('#sw-sub').textContent = sub || '完了';
-  } else $('#sw-sub').textContent = `計算中 ${sweepPts.length} / ${sweepMeta.xs.length}`;
+    if (m.sec) sub += `　（${pts.length} 点、${m.sec.toFixed(1)} 秒）`;
+  }
+  $('#sw-sub').textContent = sub || '完了';
+  const xr = m.xs.map(tx);
   chSweep.set({
-    x: { min: Math.min(...xr), max: Math.max(...xr), label: s.label, unit: '', fmt: v => s.log ? fmtWs(Math.pow(10, v) * 1e-3) + ' 入力' : (+v.toPrecision(4)) + ' ' + s.unit },
-    y: { label: 'パワー (W)', zero: true, fmt: fmtWs },
-    series, marks,
+    x: { min: Math.min(...xr), max: Math.max(...xr), label: `${m.label} (${m.unit}${m.log ? '、対数' : ''})`, unit: '',
+      fmt: v => m.log ? fmtWs(Math.pow(10, v) * 1e-3) + ' 入力' : `${fmtNum(v)} ${m.unit}` },
+    y: yCfg, series, marks,
   });
-  const head = `<tr><th>${s.label.replace(/,.*\)/, ')')}</th><th>出力信号</th><th>利得 dB</th><th>励起投入</th><th>残留励起</th><th>前方ASE</th><th>後方ASE</th><th>効率 %</th></tr>`;
-  const rows = sweepPts.map(p => `<tr><td>${+p.x.toPrecision(4)}</td><td>${fmtWs(p.sig)}</td><td>${dB(p.sig / p.sigIn).toFixed(2)}</td><td>${fmtWs(p.pump)}</td><td>${fmtWs(p.pumpRes)}</td><td>${fmtWs(p.aseF)}</td><td>${fmtWs(p.aseB)}</td><td>${p.pump > 0 ? ((p.sig - p.sigIn) / p.pump * 100).toFixed(1) : '—'}</td></tr>`).join('');
+  const cols = [['sig', '出力信号'], ['gainDB', '利得'], ['eff', '効率'], ['pump', '励起投入'], ['pumpRes', '残留励起'], ['aseF', '前方ASE'], ['aseB', '後方ASE'], ['osnr', 'OSNR'], ['heatMax', '最大熱負荷'], ['srsRatio', '出力/SRS'], ['nAvg', '平均反転']];
+  const fm = (k, v) => k === 'pump' ? fmtWs(v) : MET(k).fmt(v);
+  const head = `<tr><th>${m.label} (${m.unit})</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr>`;
+  const rows = pts.map(p => `<tr><td>${fmtNum(p.x)}</td>${cols.map(([k]) => `<td>${fm(k, p[k])}</td>`).join('')}</tr>`).join('');
   $('#sw-tbl').innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
 }
+const CSV_KEYS = ['sig', 'sigIn', 'gainDB', 'eff', 'pump', 'pumpRes', 'aseF', 'aseB', 'osnr', 'heatMax', 'srsTh', 'sbsTh', 'srsRatio', 'nAvg', 'eStored', 'eExtract', 'conv'];
+const CSV_HEAD = 'signal_out_W,signal_in_W,gain_dB,efficiency_pct,pump_W,pump_residual_W,ase_fwd_W,ase_bwd_W,osnr_dB_0.1nm,heat_max_W_per_m,srs_threshold_W,sbs_threshold_W,out_over_srs_pct,inversion_avg_pct,stored_energy_J,extractable_energy_J,converged';
+const csvVals = p => CSV_KEYS.map(k => typeof p[k] === 'boolean' ? p[k] : +(+p[k]).toPrecision(6)).join(',');
 $('#sw-copy').addEventListener('click', () => {
-  if (!sweepPts.length) return;
-  const s = SW[sweepMeta.v];
-  const rows = [`${sweepMeta.v}_${s.unit},signal_out_W,gain_dB,pump_W,pump_residual_W,ase_fwd_W,ase_bwd_W,converged`];
-  sweepPts.forEach(p => rows.push([p.x, p.sig, dB(p.sig / p.sigIn), p.pump, p.pumpRes, p.aseF, p.aseB].map(v => +(+v).toPrecision(6)).join(',') + ',' + p.conv));
-  copyText(rows.join('\n'), `${sweepPts.length} 行をコピーしました`);
+  const pts = sweepPts.filter(Boolean); if (!pts.length) return;
+  const rows = [`${sweepMeta.v}_${sweepMeta.unit},${CSV_HEAD}`];
+  pts.forEach(p => rows.push(`${+p.x.toPrecision(6)},${csvVals(p)}`));
+  copyText(rows.join('\n'), `${pts.length} 行をコピーしました`);
 });
 
+/* ---------- 2D map ---------- */
+const mxVar = $('#mx-var'), myVar = $('#my-var'), mapM = $('#map-m');
+mxVar.innerHTML = VAR_OPTS; myVar.innerHTML = VAR_OPTS;
+mapM.innerHTML = METRICS.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+mxVar.value = 'L'; myVar.value = 'pump';
+const resetMapRange = () => { refreshVarLabels(); setRange('mx', mxVar.value); setRange('my', myVar.value); };
+mxVar.addEventListener('change', () => { refreshVarLabels(); setRange('mx', mxVar.value); });
+myVar.addEventListener('change', () => { refreshVarLabels(); setRange('my', myVar.value); });
+mapM.addEventListener('change', () => drawMap());
+let mapJob = null, mapData = null, mapHover = null;
+$('#map-run').addEventListener('click', async () => {
+  const vx = mxVar.value, vy = myVar.value;
+  if (vx === vy) { toast('横と縦には別の量を選んでください'); return; }
+  const xs = readRange('mx', vx, 61), ys = readRange('my', vy, 61);
+  if (!xs || !ys) { toast('開始と終了に異なる数値を入れてください'); return; }
+  if (mapJob) mapJob.cancel();
+  const fast = { nz: Math.min(P.nz, 100), aseRes: Math.max(P.aseRes, 4) };
+  const list = [];
+  for (let j = 0; j < ys.length; j++) for (let i = 0; i < xs.length; i++) list.push(paramsWith(Object.assign({}, SW[vx].over(xs[i]), SW[vy].over(ys[j]), fast)));
+  // the current operating point, as plotted coordinates
+  const cur = { pump: P.Ppf + P.Ppb, fwdFrac: (P.Ppf + P.Ppb) > 0 ? P.Ppf / (P.Ppf + P.Ppb) * 100 : 100, L: P.L, abs: P.absMode === 'conc' ? P.N : P.absDB, coreD: P.coreD, seed: P.PsIn_mW, ls: P.ls, lp: P.lp };
+  mapData = { vx, vy, xs, ys, cells: new Array(list.length).fill(null), done: 0, lx: swL(vx), ly: swL(vy), ux: swU(vx), uy: swU(vy), cx: cur[vx], cy: cur[vy] };
+  const md = mapData;
+  $('#map-run').textContent = '計算中…'; $('#map-run').disabled = true; $('#map-copy').disabled = true; $('#map-prog').style.width = '0%';
+  const t0 = performance.now();
+  let lastDraw = 0;
+  const job = runBatch(list, (k, s) => {
+    md.cells[k] = s; md.done++;
+    $('#map-prog').style.width = (md.done / list.length * 100) + '%';
+    const t = performance.now(); if (t - lastDraw > 250) { lastDraw = t; drawMap(); }
+  });
+  mapJob = job;
+  const ok = await job.promise;
+  if (mapJob !== job) return;
+  mapJob = null;
+  $('#map-run').textContent = 'マップを計算'; $('#map-run').disabled = false;
+  if (ok) { md.sec = (performance.now() - t0) / 1000; $('#map-copy').disabled = false; }
+  drawMap();
+});
+const RAMP = [[0, [38, 40, 92]], [0.25, [44, 94, 140]], [0.5, [33, 145, 136]], [0.75, [127, 190, 75]], [1, [246, 214, 60]]];
+function rampColor(t) {
+  t = clamp(t, 0, 1);
+  for (let i = 1; i < RAMP.length; i++) if (t <= RAMP[i][0]) { const [t0, c0] = RAMP[i - 1], [t1, c1] = RAMP[i]; return `rgb(${mix(c0, c1, (t - t0) / (t1 - t0)).join(',')})`; }
+  return `rgb(${RAMP[RAMP.length - 1][1].join(',')})`;
+}
+function drawMap() {
+  const cv = $('#map-cv'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, Hh);
+  const mono = cssVar('--font-mono'), body = cssVar('--font-body'), muted = cssVar('--muted'), line = cssVar('--line'), ink = cssVar('--ink');
+  const md = mapData;
+  if (!md) {
+    ctx.fillStyle = muted; ctx.font = `13px ${body}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('「マップを計算」を押すと、ここに結果が色で表示されます。', W / 2, Hh / 2);
+    return;
+  }
+  const me = MET(mapM.value);
+  const tX = SW[md.vx].log ? Math.log10 : (v => v), tY = SW[md.vy].log ? Math.log10 : (v => v);
+  const gx = md.xs.map(tX), gy = md.ys.map(tY);
+  const vals = md.cells.map(c => c ? c[me.id] : NaN);
+  const fin = vals.filter(isFinite);
+  const vmin = fin.length ? Math.min(...fin) : 0, vmax = fin.length ? Math.max(...fin) : 1;
+  const L = 64, R = 92, T = 10, B = 40, pw = W - L - R, ph = Hh - T - B;
+  const x0 = Math.min(...gx), x1 = Math.max(...gx), y0 = Math.min(...gy), y1 = Math.max(...gy);
+  const dxh = (x1 - x0) / (gx.length - 1) / 2, dyh = (y1 - y0) / (gy.length - 1) / 2;
+  const ax0 = x0 - dxh, ax1 = x1 + dxh, ay0 = y0 - dyh, ay1 = y1 + dyh;
+  const X = v => L + (v - ax0) / (ax1 - ax0) * pw, Y = v => T + (1 - (v - ay0) / (ay1 - ay0)) * ph;
+  const nx = gx.length;
+  ctx.fillStyle = cssVar('--grid'); ctx.fillRect(L, T, pw, ph);
+  let best = -1;
+  for (let k = 0; k < vals.length; k++) {
+    const v = vals[k]; if (!isFinite(v)) continue;
+    const i = k % nx, j = Math.floor(k / nx);
+    const xa = X(gx[i] - dxh), xb = X(gx[i] + dxh), ya = Y(gy[j] + dyh), yb = Y(gy[j] - dyh);
+    ctx.fillStyle = rampColor(vmax > vmin ? (v - vmin) / (vmax - vmin) : 0.5);
+    ctx.fillRect(Math.floor(xa), Math.floor(ya), Math.ceil(xb - xa) + 1, Math.ceil(yb - ya) + 1);
+    if (best < 0 || (me.best === 'max' ? v > vals[best] : v < vals[best])) best = k;
+  }
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(L + 0.5, T + 0.5, pw, ph);
+  // axes
+  ctx.font = `11px ${mono}`; ctx.fillStyle = muted;
+  const xt = ticks(x0, x1, Math.max(3, Math.round(pw / 90)));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const v of xt.out) { const x = X(v); ctx.fillRect(x, T + ph, 1, 4); const s = SW[md.vx].log ? fmtNum(Math.pow(10, v)) : tickFmt(v, xt.st); ctx.fillText(s, clamp(x, L + 12, L + pw - 12), T + ph + 6); }
+  const yt = ticks(y0, y1, Math.max(3, Math.round(ph / 50)));
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const v of yt.out) { const y = Y(v); ctx.fillRect(L - 4, y, 4, 1); ctx.fillText(SW[md.vy].log ? fmtNum(Math.pow(10, v)) : tickFmt(v, yt.st), L - 6, y); }
+  ctx.font = `11px ${body}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`${md.lx} (${md.ux})`, L + pw / 2, Hh - 2);
+  ctx.save(); ctx.translate(12, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(`${md.ly} (${md.uy})`, 0, 0); ctx.restore();
+  // color bar
+  const cbx = L + pw + 18, cbw = 12;
+  for (let p = 0; p < ph; p++) { ctx.fillStyle = rampColor(1 - p / ph); ctx.fillRect(cbx, T + p, cbw, 1.5); }
+  ctx.strokeStyle = line; ctx.strokeRect(cbx + 0.5, T + 0.5, cbw, ph);
+  ctx.fillStyle = muted; ctx.font = `10.5px ${mono}`; ctx.textAlign = 'left';
+  ctx.textBaseline = 'top'; ctx.fillText(fin.length ? me.fmt(vmax) : '', cbx + cbw + 4, T);
+  ctx.textBaseline = 'bottom'; ctx.fillText(fin.length ? me.fmt(vmin) : '', cbx + cbw + 4, T + ph);
+  ctx.save(); ctx.translate(cbx + cbw + 12, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `11px ${body}`; ctx.fillText(me.label, 0, 0); ctx.restore();
+  // operating point and best cell
+  const cx = tX(md.cx), cy = tY(md.cy);
+  if (isFinite(cx) && isFinite(cy) && cx >= ax0 && cx <= ax1 && cy >= ay0 && cy <= ay1) {
+    ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(X(cx), Y(cy), 6, 0, 7); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = '#111'; ctx.beginPath(); ctx.arc(X(cx), Y(cy), 7.5, 0, 7); ctx.stroke();
+  }
+  if (best >= 0 && md.done === md.cells.length) {
+    const bx = X(gx[best % nx]), by = Y(gy[Math.floor(best / nx)]);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, by - 7); ctx.lineTo(bx + 6, by); ctx.lineTo(bx, by + 7); ctx.lineTo(bx - 6, by); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  // subtitle
+  if (md.done === md.cells.length && best >= 0) {
+    const c = md.cells[best];
+    $('#map-sub').textContent = `${me.label}が${me.best === 'max' ? '最大' : '最小'}: ${md.lx} ${fmtNum(md.xs[best % nx])} ${md.ux}、${md.ly} ${fmtNum(md.ys[Math.floor(best / nx)])} ${md.uy} で ${me.fmt(c[me.id])}` + (md.sec ? `（${md.cells.length} 点、${md.sec.toFixed(1)} 秒）` : '');
+  } else $('#map-sub').textContent = `計算中 ${md.done} / ${md.cells.length}`;
+  // hover
+  md.geo = { L, T, pw, ph, ax0, ax1, ay0, ay1, nx, gx, gy, dxh, dyh };
+  if (mapHover) {
+    const { hx, hy } = mapHover;
+    if (hx >= L && hx <= L + pw && hy >= T && hy <= T + ph) {
+      const vx = ax0 + (hx - L) / pw * (ax1 - ax0), vy = ay0 + (1 - (hy - T) / ph) * (ay1 - ay0);
+      const i = nearest(gx, vx), j = nearest(gy, vy), c = md.cells[j * nx + i];
+      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.strokeRect(X(gx[i] - dxh), Y(gy[j] + dyh), X(gx[i] + dxh) - X(gx[i] - dxh), Y(gy[j] - dyh) - Y(gy[j] + dyh));
+      const tip = mapTip;
+      tip.innerHTML = `<b>${md.lx}</b> ${fmtNum(md.xs[i])} ${md.ux}<br><b>${md.ly}</b> ${fmtNum(md.ys[j])} ${md.uy}<br>` +
+        (c ? `${me.label}: <b>${me.fmt(c[me.id])}</b>` + (me.id !== 'sig' ? `<br>出力 ${fmtWs(c.sig)}` : '') + (me.id !== 'eff' ? `<br>効率 ${isFinite(c.eff) ? c.eff.toFixed(1) : '—'} %` : '') : '計算中');
+      tip.hidden = false;
+      const tw = tip.offsetWidth;
+      tip.style.left = (hx + 14 + tw > W ? hx - tw - 14 : hx + 14) + 'px';
+      tip.style.top = Math.max(0, hy - 10) + 'px';
+    } else mapTip.hidden = true;
+  }
+}
+const mapTip = document.createElement('div'); mapTip.className = 'tip'; mapTip.hidden = true; $('#map-wrap').appendChild(mapTip);
+{
+  const cv = $('#map-cv');
+  const mv = (e) => { const r = cv.getBoundingClientRect(); mapHover = { hx: e.clientX - r.left, hy: e.clientY - r.top }; drawMap(); };
+  cv.addEventListener('pointermove', mv); cv.addEventListener('pointerdown', mv);
+  cv.addEventListener('pointerleave', () => { mapHover = null; mapTip.hidden = true; drawMap(); });
+}
+$('#map-copy').addEventListener('click', () => {
+  const md = mapData; if (!md) return;
+  const rows = [`${md.vx}_${md.ux},${md.vy}_${md.uy},${CSV_HEAD}`];
+  md.cells.forEach((c, k) => { if (c) rows.push(`${+md.xs[k % md.xs.length].toPrecision(6)},${+md.ys[Math.floor(k / md.xs.length)].toPrecision(6)},${csvVals(c)}`); });
+  copyText(rows.join('\n'), `${rows.length - 1} 行をコピーしました`);
+});
+
+/* ---------- cross-section import ---------- */
+const readFile = (inp, ta) => inp.addEventListener('change', () => {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const fr = new FileReader(); fr.onload = () => { ta.value = String(fr.result); }; fr.readAsText(f);
+});
+readFile($('#imp-fa'), $('#imp-a')); readFile($('#imp-fe'), $('#imp-e'));
+$('#imp-go').addEventListener('click', () => {
+  const msg = $('#imp-msg');
+  try {
+    const info = importXS($('#imp-a').value, $('#imp-e').value, false);
+    msg.className = 'msg'; msg.textContent = info;
+    onParam('comp', 'user', 'sel');
+    toast('実測の断面積で計算しています');
+  } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; }
+});
+$('#imp-ex').addEventListener('click', () => {
+  const a = [], e = [];
+  for (let l = 880; l <= 1150; l += 2) { a.push(`${l}, ${(sigA(l) * 1e24).toFixed(4)}`); e.push(`${l}, ${(sigE(l) * 1e24).toFixed(4)}`); }
+  $('#imp-a').value = '# 波長 nm, 吸収断面積 1e-24 m2\n' + a.join('\n');
+  $('#imp-e').value = '# 波長 nm, 放出断面積 1e-24 m2\n' + e.join('\n');
+  $('#imp-msg').className = 'msg'; $('#imp-msg').textContent = '今使っている断面積を書き出しました。書き換えてから「読み込んで使う」を押せます。';
+});
+if (USER_XS_INFO) $('#imp-msg').textContent = '保存済みの実測データ: ' + USER_XS_INFO;
+
 /* ---------- boot ---------- */
+applyXS();
 if (P.absMode !== 'conc') P.N = effN();
 applyPumpRange();
 syncInputs();
@@ -1163,6 +1681,8 @@ presetSel.value = matchPreset();
 updateDerived();
 drawXS();
 resetSweepRange();
+resetMapRange();
+drawMap();
 schedule();
 })();
 </script>
